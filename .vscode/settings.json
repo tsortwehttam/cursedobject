@@ -1,0 +1,25 @@
+{
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.suggestionActions.enabled": true,
+  "typescript.referencesCodeLens.showOnAllFunctions": true,
+  "typescript.referencesCodeLens.enabled": true,
+  "typescript.implementationsCodeLens.enabled": true,
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "javascript.preferences.importModuleSpecifier": "relative",
+  "eslint.codeActionsOnSave.mode": "all",
+  "eslint.run": "onType",
+  "search.useIgnoreFiles": true,
+  "search.useGlobalIgnoreFiles": false,
+  "files.associations": {
+    "Makefile": "makefile"
+  },
+  "files.exclude": {
+    "**/.DS_Store": true
+  }
+}

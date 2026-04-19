@@ -1,0 +1,14 @@
+.DS_Store
+*.log
+node_modules
+.yarn/cache/
+.env
+.env.*
+!.env.example
+.next
+*.tsbuildinfo
+.local-data
+.sst/*
+web/.open-next
+.github
+.msgmon/*
