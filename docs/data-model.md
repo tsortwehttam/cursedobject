@@ -222,7 +222,8 @@ type Effect =
   | { type: "attach"; parent: EntityId; anchor: AnchorName; child: EntityId }
   | { type: "detach"; parent: EntityId; anchor: AnchorName; child: EntityId }
   | { type: "move"; entity: EntityId; to: string }
-  | { type: "ai"; request: AIRequest };
+  | { type: "ai"; request: AIRequest }
+  | { type: "nav"; request: NavRequest };
 ```
 
 Notes:
@@ -230,7 +231,7 @@ Notes:
 - handlers return intended state transitions as effects
 - the engine validates and applies them in deterministic order
 - `learn` is an explicit effect, not an implicit side effect of reading traits
-- AI work is represented internally as an engine-managed effect
+- adapter-backed work (AI, nav, line-of-sight, future I/O) is represented internally as engine-managed effects and resolved through the corresponding adapter
 
 ### Execution flow
 
@@ -309,6 +310,88 @@ That keeps the important invariant intact:
 - event execution may suspend
 - world reads remain immediate against committed state
 - state commits remain centralized and inspectable
+
+## Scripting Execution Model
+
+Authored scripting uses two delimiter families with strict, non-overlapping roles.
+
+### `{{...}}` — sync, pure
+
+`{{...}}` is the logical/composition layer.
+
+- reads committed world state and in-scope bindings
+- composes values with pure operators and functions
+- branches with `{{#if}}`, `{{#switch}}`, etc.
+- never invokes adapter-backed work
+- never suspends
+
+The validator rejects any reference to adapter-backed directives or functions inside `{{...}}`.
+
+### `<<...>>` — suspension, one adapter call per block
+
+`<<...>>` is the I/O layer. Each block performs exactly one adapter-backed operation.
+
+Grammar:
+
+```
+<<# directive [binding :] body>>
+```
+
+- `directive` names the operation, for example `text`, `number`, `bool`, `enum`, `JSON`, `image:url`, `navigate`, `pathTo`, `canSee`.
+- `binding :` is optional. When present, the result is bound to the given name in the enclosing handler scope.
+- `body` is parsed as positional tokens: `$var` references resolve against scope, bare identifiers are entity references, and for prose directives (`#text`, `#bool`, `#enum`, etc.) the remainder is the prompt.
+- There is no expression parser inside `<<...>>`. Arithmetic, composition, and branching live in `{{...}}`.
+
+`{{...}}` interpolation inside a prompt body is allowed. The engine resolves those pure values first, bakes the string, then dispatches the adapter call.
+
+Examples:
+
+```yaml
+<<#navigate $actor $target>>                           # fire and forget
+<<#pathTo path : $actor Bob>>                          # bind path
+<<#canSee visible : $actor Bob>>                       # bind bool
+<<#text describe a scary place>>                       # emit at position
+<<#text desc : describe a scary place>>                # bind to desc
+<<#bool ok : Is it cold here?>>                        # bind bool
+<<#enum mood : happy|sad|angry : What mood is Bob in?>>
+```
+
+Without a binding:
+
+- prose directives (`#text`, `#image:url`, etc.) emit their result at position in the rendered string
+- non-prose directives are fire-and-forget; the result is discarded
+
+### Execution
+
+A handler action is a sequence of `{{...}}` and `<<...>>` blocks.
+
+- `{{...}}` blocks evaluate synchronously against the current environment (committed state plus bindings accumulated so far).
+- `<<...>>` blocks emit one effect, the handler suspends, the engine resolves the effect through the appropriate adapter, the result is written into scope under the declared binding (or dropped, or emitted), and the handler resumes.
+
+The expression evaluator never suspends mid-AST. Suspension happens at block boundaries.
+
+### Parallelism
+
+When the engine sees multiple `<<...>>` blocks with no binding dependency between them, it is free to dispatch them in parallel and wait on the group. Authors do not reason about this.
+
+### Collapsing AI-branching forms
+
+AI-backed branching is not a separate construct. Authors bind a `#bool` or `#enum` result and then branch in `{{...}}`:
+
+```yaml
+<<#bool romantic : Does Jim feel romantic toward Sue?>>
+{{#if romantic}}
+  something
+{{#end}}
+
+<<#enum sentiment : angry|happy|neutral : {{$input}}>>
+{{#switch sentiment}}
+  {{#case angry}} something
+  {{#case happy}} something else
+{{#end}}
+```
+
+There is one way to do conditional dispatch over adapter-backed results.
 
 ## AI Resolution
 
@@ -533,6 +616,55 @@ Even a simple salience model is useful. Early heuristics should prefer:
 - high-confidence facts
 - emotionally charged or conflict-relevant facts
 
+## Nav and Spatial Adapters
+
+Navigation, pathfinding, and line-of-sight are adapter-backed capabilities. The engine does not bake in a specific spatial model. A host plugs in whatever fits its world: an entity-graph walker for room-based IF, a tile-grid A*, a 3D navmesh, a full physics raycaster.
+
+This keeps the same authored world runnable under wildly different renderers and removes the pressure to pick "the" nav model at the engine layer.
+
+### `NavAdapter`
+
+```ts
+type NavAdapter = {
+  canSee(observer: EntityId, subject: EntityId, world: WorldView) -> Promise<boolean> | boolean;
+  pathTo(from: EntityId, to: EntityId, world: WorldView) -> Promise<NavPath | null> | NavPath | null;
+  navigate(entity: EntityId, to: EntityId, world: WorldView) -> Promise<NavHandle>;
+  progress(handle: NavHandle, world: WorldView) -> number;
+  cancel(handle: NavHandle) -> void;
+};
+```
+
+- `canSee` and `pathTo` are point queries. Adapters may answer synchronously or asynchronously; the engine treats them uniformly.
+- `navigate` starts an ongoing operation and returns a handle.
+- `progress` reads progress in `0..1` against committed state. It is sync because the adapter is expected to commit progress updates into world state as it ticks.
+- `cancel` aborts an ongoing op.
+
+### `NavRequest`
+
+```ts
+type NavRequest =
+  | { kind: "canSee"; observer: EntityId; subject: EntityId }
+  | { kind: "pathTo"; from: EntityId; to: EntityId }
+  | { kind: "navigate"; entity: EntityId; to: EntityId }
+  | { kind: "cancel"; handle: NavHandle };
+```
+
+### Author-facing surface
+
+Nav is reached exclusively through `<<...>>` directives:
+
+```yaml
+<<#canSee visible : $actor Bob>>
+<<#pathTo path : $actor Bob>>
+<<#navigate $actor Bob>>
+```
+
+Point-query results bind through the normal `binding :` mechanism. Ongoing operations are kicked off as fire-and-forget; the adapter writes status and progress into committed state, which `{{...}}` can then read synchronously.
+
+### Determinism and replay
+
+Adapter results for point queries should be logged alongside the event that produced them so replay can reproduce handler outcomes without rerunning the host adapter. Ongoing operations replay through their committed state trail.
+
 ## Anchors
 
 Anchors should stay generic and narrowly scoped.
@@ -589,8 +721,13 @@ The event log is used for:
 
 The following remain unresolved and should stay in the README-level spec until answered:
 
-- should navigation be represented through anchors, or as a separate but entity-backed graph layer?
-- what is the smallest viable nav model that still supports authored spaces?
+- handler dispatch and observer model: whose handlers run when an event fires, and how do perceivers react?
+- inheritance and `super: true` semantics: handler body merging vs chaining, trait override order under multi-inheritance, diamond resolution
+- ongoing operation state: is there an engine-managed `ongoing` map on `EntityState` exposing progress and handles, or do authors model this with traits?
+- effect ordering and conflict resolution when multiple effects target the same trait in one commit
+- time, ticks, and scheduling: clock adapter, tick events, delayed effects
+- save/load format, including treatment of in-flight events
+- failure modes for adapter calls and script evaluation: retry, skip, emit failure event?
 
 ## Query Model
 

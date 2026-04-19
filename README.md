@@ -390,35 +390,53 @@ foo: {{+a|b|c}}
 
 ### `<< ... >>` interpolation
 
-Use `<< ... >>` for AI-backed evaluation:
+`<< ... >>` is the suspension-world. Each block performs exactly one adapter-backed operation: an AI call, a nav query, a line-of-sight check, or any other engine-managed I/O. Every block takes a `#directive` prefix and may optionally bind its result.
+
+Grammar:
+
+```
+<<# directive [binding :] body>>
+```
+
+Examples:
 
 ```yaml
-foo: <<the angriest character's name>>
-foo: <<describe a scary looking place>>
+foo: <<#text describe a scary looking place>>
+foo: <<#text name : the angriest character's name>>
 foo: <<#number Times Jim has said the word "the">>
 foo: <<#JSON roll a character with age, hair color, weight>>
 foo: <<#image:url Photoreal picture of cherry blossoms>>
-foo: |
-  <<#if Jim feels romantic toward Sue>>
-    something
-  <<#elsif Rob is looking at Elsa>>
-    something else
-  <<#end>>
-foo: |
-  <<#switch {{$input}}>>
-  <<#case sentiment is angry>> something
-  <<#case the painting on the wall is mentioned>> something else
-  <<#end>>
-foo: <<#number temp in NYC today in celsius>>
-foo: <<#JSON roll a character with age, hair color, weight>>
+foo: <<#bool romantic : Does Jim feel romantic toward Sue?>>
+foo: <<#enum mood : happy|sad|angry : What mood is Bob in?>>
 
-# Layered intepolation should also be possible: template injection, then DCV within <<...>>
-foo: <<describe hot weather in {{10|12|20}} words|describe warm weather>>
+# nav and line-of-sight use the same machinery
+foo: <<#canSee visible : $actor Bob>>
+foo: <<#pathTo path : $actor Bob>>
+foo: <<#navigate $actor Bob>>
+
+# layered interpolation: {{...}} is resolved first and baked into the prompt
+foo: <<#text describe hot weather in {{10|12|20}} words>>
 ```
 
-This should compile down to explicit adapter calls with structured context. The engine, not the author, should be responsible for assembling the right prompt context from world state; although the engine may want to support affordances that allow the author to control or override exactly how context gets assembled.
+Rules:
 
-Internally, the engine may represent AI-backed resolution as a deferred effect so it can manage async execution, caching, logging, and deterministic application of returned results. That internal effect model is an engine detail, not a primitive authors need to think in directly.
+- Inside `<<...>>` there is no expression parser. Args are positional tokens; `$var` resolves against scope, bare identifiers are entity refs, remainder-of-body is the prompt for prose directives.
+- Without a `binding :`, prose directives emit their result at position; non-prose directives are fire-and-forget.
+- AI-backed branching is not a separate construct. Bind a `#bool` or `#enum` result, then branch in `{{...}}`.
+
+Example of branching on an AI classification:
+
+```yaml
+foo: |
+  <<#bool romantic : Does Jim feel romantic toward Sue?>>
+  {{#if romantic}}
+    something
+  {{#end}}
+```
+
+This should compile down to explicit adapter calls with structured context. The engine, not the author, is responsible for assembling the right prompt context from world state, though the engine may expose affordances for author override.
+
+Internally, each `<<...>>` block lowers to a declarative effect that the engine resolves through the right adapter, with caching, logging, and deterministic replay. That effect model is an engine detail, not a primitive authors need to think in directly.
 
 ### Script blocks
 
@@ -475,29 +493,28 @@ This is mainly a convenience layer. The host environment is still responsible fo
 
 ## Spatial Model and Navigation
 
-Facsimile should support explorable spaces, but spatial logic should still come from the same primitives.
+Facsimile should support explorable spaces, but the engine does not bake in a specific spatial model.
 
-The likely model is:
+Walkable locations are still entities, occupancy is still explicit, and range predicates still work against world positions or graph distance. What changes is that navigation, pathfinding, and line-of-sight are adapter-backed. The engine defines a small nav interface and the host supplies the implementation:
 
-- walkable locations are entities
-- occupancy is explicit
-- range checks use world positions or graph distance
+- an entity-graph walker for room-based IF
+- a tile-grid A*
+- a 3D navmesh
+- a full physics raycaster
 
-This should be enough to express:
+The same authored world should run under any of these without changes to simulation code.
 
-- rooms
-- doors
-- patrol paths
-- "stand here" slots
-- adjacency and line-of-sight rules
-- movement costs
+Authoring uses `<<...>>` directives for anything that touches the spatial adapter:
 
-The engine should support both:
+```yaml
+<<#canSee visible : $actor Bob>>
+<<#pathTo path : $actor Bob>>
+<<#navigate $actor Bob>>
+```
 
-- authored navigation layouts
-- partially procedural layouts
+Ongoing operations like `navigate` write status and progress into committed state, which `{{...}}` can read synchronously. Point queries like `canSee` and `pathTo` resolve through the adapter and bind their results into handler scope.
 
-Open question: whether navigation should be a separate but entity-backed graph layer rather than being encoded through anchors. The main pressure here is authoring ergonomics for spaces like tile grids, where manually defining links on every entity would be too expensive.
+This keeps the engine portable and pushes the "what's my spatial model" decision down to the host, where it belongs.
 
 ## Planning and NPC Behavior
 
@@ -586,8 +603,11 @@ Good prior art may come from games, simulation frameworks, narrative tools, AI a
 
 These are the main unresolved questions that should shape implementation next:
 
-- Should navigation be represented through anchors, or as a separate but entity-backed graph layer?
-- What is the smallest viable nav model that still supports authored spaces?
+- Handler dispatch and the observer model: when an event fires, whose handlers run — the target's, the actor's, both? How do bystanders who perceive an event react?
+- Inheritance and `super: true` semantics: handler body merging vs chaining, trait override order under multi-inheritance, diamond resolution.
+- Ongoing operations and their observation surface: how does `{{...}}` see progress and status of long-running `<<...>>` operations? Engine-managed `ongoing` map on `EntityState`, or author-modeled traits?
+- Effect ordering and conflict resolution when multiple effects write to the same trait in one commit.
+- Time, ticks, and scheduling: engine clock adapter, tick events, delayed effects.
 
 ## Implementation Direction
 
