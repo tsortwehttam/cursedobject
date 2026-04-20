@@ -98,6 +98,18 @@ export function applyEvent(input: EventInput, world: WorldState, options: Runtim
   return { ok: true, run, committed, world };
 }
 
+export function getEventText(event: EventRecord): string | null {
+  if (event.type === "say" && typeof event.body === "string") return event.body;
+  if (event.body && typeof event.body === "object" && !Array.isArray(event.body) && typeof event.body.text === "string") {
+    return event.body.text;
+  }
+  return null;
+}
+
+export function getRunText(result: ApplyResult): string[] {
+  return result.committed.map(getEventText).filter((text): text is string => text !== null && text.length > 0);
+}
+
 type ProcessResult =
   | { ok: true; event: EventRecord; emits: EventInput[] }
   | { ok: false; error: ApplyError };
@@ -330,6 +342,17 @@ function createActionFunctions(
       if (eventInput) emits.push(eventInput);
       return null;
     },
+    say: (text) => {
+      if (typeof text !== "string") return null;
+      emits.push({
+        type: "say",
+        actor: event.target,
+        target: event.actor,
+        body: text,
+        observers: [],
+      });
+      return null;
+    },
   };
 }
 
@@ -442,10 +465,10 @@ function evaluateRuntimeExpr(expr: string, vars: Record<string, TraitValue>, fun
   if (call) {
     const fn = funcs[call.name];
     if (!fn) return null;
-    return fn(...call.args.map((arg) => parseValue(arg, vars)));
+    return fn(...call.args.map((arg) => parseValue(arg, vars, funcs)));
   }
 
-  return parseValue(expr, vars);
+  return parseValue(expr, vars, funcs);
 }
 
 function parseCall(expr: string): { name: string; args: string[] } | null {
@@ -457,7 +480,7 @@ function parseCall(expr: string): { name: string; args: string[] } | null {
   return { name, args: splitArgs(body) };
 }
 
-function parseValue(expr: string, vars: Record<string, TraitValue>): TraitValue {
+function parseValue(expr: string, vars: Record<string, TraitValue>, funcs: Record<string, RuntimeFunc>): TraitValue {
   const value = expr.trim();
   if (!value) return null;
   if (value === "null" || value === "undefined") return null;
@@ -466,25 +489,30 @@ function parseValue(expr: string, vars: Record<string, TraitValue>): TraitValue 
   if (isQuoted(value)) return value.slice(1, -1);
   if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
   if (value.startsWith("[") && value.endsWith("]")) {
-    return splitArgs(value.slice(1, -1)).map((part) => parseValue(part, vars));
+    return splitArgs(value.slice(1, -1)).map((part) => parseValue(part, vars, funcs));
   }
   if (value.startsWith("{") && value.endsWith("}")) {
-    return parseObject(value.slice(1, -1), vars);
+    return parseObject(value.slice(1, -1), vars, funcs);
   }
   if (value.startsWith("$")) {
     return getVar(vars, value);
   }
+  if (parseCall(value)) return evaluateRuntimeExpr(value, vars, funcs);
   return value;
 }
 
-function parseObject(body: string, vars: Record<string, TraitValue>): Record<string, TraitValue> {
+function parseObject(
+  body: string,
+  vars: Record<string, TraitValue>,
+  funcs: Record<string, RuntimeFunc>,
+): Record<string, TraitValue> {
   const out: Record<string, TraitValue> = {};
   for (const entry of splitArgs(body)) {
     const parts = splitTopLevel(entry, ":");
     if (parts.length < 2) continue;
     const key = parts[0]?.trim() ?? "";
     if (!key) continue;
-    out[stripQuotes(key)] = parseValue(parts.slice(1).join(":").trim(), vars);
+    out[stripQuotes(key)] = parseValue(parts.slice(1).join(":").trim(), vars, funcs);
   }
   return out;
 }

@@ -4,14 +4,16 @@
   "main": "index.js",
   "license": "Apache-2.0",
   "scripts": {
-    "ts": "npx tsx --",
+    "ts": "tsx --",
+    "facade": "tsx dev/facade-repl.ts",
     "typecheck": "tsc --noEmit",
-    "test": "for f in $(find . -name '*.test.ts' -not -path '*/node_modules/*' -not -path './.next/*' | sort); do echo \"Running $f\"; npx tsx \"$f\" || exit 1; done",
-    "verify": "yarn typecheck && yarn test"
+    "test": "for f in $(find . -name '*.test.ts' -not -path '*/node_modules/*' -not -path './.next/*' | sort); do echo \"Running $f\"; tsx \"$f\" || exit 1; done",
+    "verify": "npm run typecheck && npm test"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.5.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {

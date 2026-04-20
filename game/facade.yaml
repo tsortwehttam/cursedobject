@@ -1,0 +1,183 @@
+aliases:
+  apartment: Apartment
+  room: Apartment
+  trip: Trip
+  grace: Grace
+  me: Player
+  player: Player
+  couch: Couch
+  sofa: Couch
+  bar: BarCart
+  bar cart: BarCart
+  drink: BarCart
+  drinks: BarCart
+  painting: Painting
+  art: Painting
+  photo: WeddingPhoto
+  wedding photo: WeddingPhoto
+
+world:
+  Person:
+    traits:
+      public:
+        location: Apartment
+    handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      talk_to:
+        action: say(getTrait($self, "greeting"))
+
+  Item:
+    handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      use:
+        action: say(getTrait($self, "use_text"))
+
+  Room:
+    handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+
+  Player:
+    inherits: [Person]
+    traits:
+      public:
+        location: Apartment
+        description: You are an old friend visiting Trip and Grace.
+
+  Trip:
+    inherits: [Person]
+    traits:
+      public:
+        location: Apartment
+        description: Trip is polished and restless, hovering near the bar cart like hosting is a performance.
+        greeting: Trip smiles too quickly. "Hey, there you are. Come in, come in. Can I get you a drink?"
+        talk_1: Trip laughs at the wrong moment. "We're good. Everything's good. Grace worries too much."
+        talk_2: Trip lowers his voice. "You know Grace. She makes every little thing into a referendum on my entire personality."
+        talk_3: Trip grips his glass. "Sometimes I think I built this whole apartment so nobody would ask what I actually wanted."
+        mood: anxious
+        trust: 0
+        talks: 0
+        drinks: 0
+      private:
+        insecurity: Trip worries Grace thinks he is shallow.
+        secret.sexuality: gay
+    handlers:
+      talk_1:
+        action: |
+          setTrait($self, "talks", 1)
+          say(getTrait($self, "talk_1"))
+      talk_2:
+        action: |
+          setTrait($self, "talks", 2)
+          say(getTrait($self, "talk_2"))
+      talk_3:
+        action: |
+          setTrait($self, "talks", 3)
+          say(getTrait($self, "talk_3"))
+
+  Grace:
+    inherits: [Person]
+    traits:
+      public:
+        location: Apartment
+        description: Grace stands by the couch, composed but tense, watching Trip more than she watches you.
+        greeting: Grace gives you a small, careful smile. "I'm glad you came. We needed a normal evening."
+        talk_1: Grace folds her arms. "Trip wants tonight to feel effortless. That usually means I'm supposed to disappear into the decor."
+        talk_2: Grace looks toward the kitchen. "I shouldn't talk like this. Not with Trip right here pretending not to listen."
+        talk_3: Grace exhales. "You always ask the thing I'm trying not to answer. Maybe that's why I still trust you."
+        affair_confession: Grace glances toward the wedding photo. "When we were first married, I did something cruel. I had an affair. I told myself it was because I felt invisible."
+        mood: guarded
+        trust: 0
+        talks: 0
+        affair_revealed: false
+      private:
+        resentment: Grace feels boxed in by Trip's taste and expectations.
+        secret.affair: Grace had an affair when she and Trip were first married.
+    handlers:
+      talk_1:
+        action: |
+          setTrait($self, "talks", 1)
+          setTrait($self, "trust", 1)
+          say(getTrait($self, "talk_1"))
+      talk_2:
+        action: |
+          setTrait($self, "talks", 2)
+          setTrait($self, "trust", 2)
+          say(getTrait($self, "talk_2"))
+      talk_3:
+        action: |
+          setTrait($self, "talks", 3)
+          setTrait($self, "trust", 3)
+          say(getTrait($self, "talk_3"))
+      confess_affair:
+        action: |
+          setTrait($self, "affair_revealed", true)
+          learn("Player", $self, "secret.affair", getTrait($self, "secret.affair"), { eventId: $event.id, actor: $self, note: "confession" })
+          learn("Trip", $self, "secret.affair", getTrait($self, "secret.affair"), { eventId: $event.id, actor: $self, note: "overheard confession" })
+          say(getTrait($self, "affair_confession"))
+
+  Apartment:
+    inherits: [Room]
+    traits:
+      public:
+        description: Trip and Grace's apartment is sleek and a little too arranged. You see a couch, a bar cart, a painting, and a wedding photo. Trip and Grace are here.
+
+  Couch:
+    inherits: [Item]
+    traits:
+      public:
+        location: Apartment
+        description: A modern couch with stiff cushions. It looks chosen more for guests than comfort.
+        use_text: You sit for a moment. The room feels quieter, but Trip keeps standing.
+
+  BarCart:
+    inherits: [Item]
+    tags: [drink]
+    traits:
+      public:
+        location: Apartment
+        description: The bar cart is immaculate. Wine, gin, tonic, and polished glasses are lined up with nervous care.
+        use_text: Trip brightens. "Great, yes, drinks. Drinks make everything easier." Grace looks away.
+        drink_1: Trip pours himself a drink too quickly. "Just one. Hosting requires stamina."
+        drink_2: Trip finishes another drink. His charm loosens into something brittle. "See? Now we're actually talking."
+        drink_3: Trip stares into his glass. "Fine. You want honesty? I'm gay. Secretly, stupidly, impossibly gay. There. Happy?" Grace goes still.
+        drink_full: Trip reaches for the bottle, misses, and laughs once. "No. No more. I am... fully drunk."
+    handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      use:
+        action: say(getTrait($self, "use_text"))
+      serve_drink_1:
+        action: |
+          setTrait("Trip", "drinks", 1)
+          say(getTrait($self, "drink_1"))
+      serve_drink_2:
+        action: |
+          setTrait("Trip", "drinks", 2)
+          say(getTrait($self, "drink_2"))
+      serve_drink_3:
+        action: |
+          setTrait("Trip", "drinks", 3)
+          learn("Player", "Trip", "secret.sexuality", getTrait("Trip", "secret.sexuality"), { eventId: $event.id, actor: "Trip", note: "drunken confession" })
+          learn("Grace", "Trip", "secret.sexuality", getTrait("Trip", "secret.sexuality"), { eventId: $event.id, actor: "Trip", note: "drunken confession" })
+          say(getTrait($self, "drink_3"))
+      serve_drink_full:
+        action: say(getTrait($self, "drink_full"))
+
+  Painting:
+    inherits: [Item]
+    traits:
+      public:
+        location: Apartment
+        description: A large abstract painting dominates the wall. Bold shapes, expensive frame, no warmth.
+        use_text: You study the painting. Grace notices. "I used to paint things that felt less... staged."
+
+  WeddingPhoto:
+    inherits: [Item]
+    traits:
+      public:
+        location: Apartment
+        description: Trip and Grace smile in the wedding photo, but Grace's hand is clenched around the bouquet.
+        use_text: You pick up the photo. Trip says, "Beautiful day." Grace says nothing.
