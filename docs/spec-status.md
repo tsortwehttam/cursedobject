@@ -38,6 +38,10 @@ It is the shortest current snapshot of the Facsimile spec.
 - Multi-inheritance linearization: depth-first left-to-right, flat deduplication, last occurrence wins. Self always wins over ancestors.
 - Anchors under inheritance: later-in-chain wins per anchor name, same rule as handlers and traits.
 - Chain through multiple ancestors: the engine walks the linearized chain and runs each `super: true` handler in order from base to self. A non-super handler in the chain terminates inheritance at that point.
+- Handler preconditions in v1 are a single optional `when:` expression. It is a sync `{{...}}` expression that reads committed state only (no adapter-backed calls), and must be truthy for the handler to run. Type checks, spatial checks, ordering — everything — expresses through `when:` via pure stdlib helpers.
+- Failed preconditions silently drop the handler. No `refused` event, no error effect (revisit if authors need visibility).
+- Common predicate patterns (`hasType`, `hasTag`, `within`, etc.) are pure helpers in the script stdlib that read adapter-materialized committed state. Spatial predicates work because the nav adapter maintains distance/adjacency state in committed state.
+- Structured predicate sugar (`accepts`, `within` as dedicated fields, `after`, etc.) is deferred. Only added once real authored content shows the same pattern enough to justify a dedicated field.
 
 ## Detailed References
 
@@ -46,8 +50,6 @@ It is the shortest current snapshot of the Facsimile spec.
 
 ## Open Questions
 
-- Handler precondition vocabulary: fixed set (`accepts`, `within`, `after`) vs open-ended `when:` predicate reading committed state.
-- Event refusal when preconditions fail: silent drop, `refused` event, or error effect?
 - Cascade and reentrancy for ordinary events: cascade depth limit, termination guarantees, shape of the event log across cascades.
 - Ongoing operations and their observation surface: a `<<#navigate>>` block starts a long-running op. How does `{{...}}` see "am I navigating?" or "how far along?" Is there an engine-managed `ongoing` map on `EntityState`, or do authors model this with traits?
 - Effect ordering and conflict: when multiple effects write to the same trait in one commit, what wins — stable insertion order, author-declared priority, last-write-wins?

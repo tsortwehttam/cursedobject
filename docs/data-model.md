@@ -231,6 +231,37 @@ Higher-order theory of mind such as "Alice knows Bob knows X" should not be a v1
 
 Handlers should be declarative. They should not directly mutate world state or call adapters.
 
+### `HandlerDef`
+
+```ts
+type HandlerDef = {
+  when: string | null;
+  super: boolean;
+  action: string;
+};
+```
+
+- `when` is an optional single `{{...}}` expression. The handler only runs if it evaluates truthy. It is sync, pure, and reads committed state only — no adapter-backed calls. Scope includes `$actor`, `$target`, `$event`, `$self`.
+- `super` controls inheritance chaining (see Inheritance above).
+- `action` is the script body that produces effects when the handler runs.
+
+#### Preconditions in v1
+
+The v1 precondition surface is just `when:`. Authors express type checks, tag checks, spatial predicates, and ordering through pure stdlib helpers inside the `when:` expression:
+
+```yaml
+tear_off_shirt:
+  when: "{{ hasType($actor, 'Person') && within($actor, $self, 2.0) && $self.wearing_shirt }}"
+  action: |
+    set("wearing_shirt", false)
+```
+
+Helpers like `hasType`, `hasTag`, and `within` are pure functions that read committed state. Spatial predicates work because the nav adapter maintains distance and adjacency in committed state, so `within` is a sync read.
+
+Failed preconditions silently drop the handler: no event is emitted and no error effect is produced. This may evolve if authors need visibility into refusal, but v1 is silent.
+
+Structured predicate fields (`accepts`, `within` as a top-level field, `after`, and so on) are deliberately deferred. They get added only once real authored content shows a pattern repeated often enough to justify dedicated sugar.
+
 ### `HandlerContext`
 
 ```ts

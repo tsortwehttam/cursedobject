@@ -138,19 +138,17 @@ Examples:
 - `kiss`
 - `punch`
 
-A handler should define things like:
+A handler should define:
 
-- who can invoke it
-- under what conditions it is available
-- range or spatial requirements
-- ordering constraints
+- an optional `when:` precondition expression
+- an optional `super: true` flag for inheritance chaining
 - the logic that runs when it is invoked
 
 Handlers are how authored content meets simulation. They should be discoverable and queryable so both UI code and NPC decision systems can inspect what is currently possible.
 
 Handlers are ideally atomic and non-overlapping (this isn't a rule but a general principle). Meaning, we would not have an `accuse` action because that would be better encapslated by a character using `talk_to` to verbally give the accusation.
 
-Dispatch is always target-side. A handler lives on the entity being acted on; the event's `target` determines whose handler runs. `Painting_1.look_at` runs when someone looks at it; `move_to` dispatches to the destination; `$input.keyboard/upArrow` runs when the input system emits a keystroke. Actor-side concerns (actor type, required traits, range) are expressed as handler preconditions, not as a second handler layer.
+Dispatch is always target-side. A handler lives on the entity being acted on; the event's `target` determines whose handler runs. `Painting_1.look_at` runs when someone looks at it; `move_to` dispatches to the destination; `$input.keyboard/upArrow` runs when the input system emits a keystroke. Actor-side concerns (actor type, required traits, range, spatial and temporal gates) are expressed through the handler's `when:` precondition using pure stdlib helpers like `hasType`, `hasTag`, and `within`. Failed preconditions silently drop the handler.
 
 Observer reactions are modeled as synthetic perceive events. After a primary event commits, the engine emits a `perceive/<primary_type>` event to each observer (for example, `perceive/look_at`, `perceive/talk_to`). Perceive events dispatch target-side to the observer and follow the normal handler pipeline. Event type names are namespaced with `/`; `.` is reserved for trait paths.
 
@@ -303,7 +301,7 @@ The exact schema is still evolving, but the intended direction looks like this:
 Person:
   handlers:
     look_at:
-      accepts: [Person]
+      when: "{{ hasType($actor, 'Person') }}"
       action: |
         convey($public_traits, $actor)
   anchors:
@@ -321,9 +319,8 @@ Bob:
       hair_color: blue
       wearing_shirt: true
     private:
-      tattoo:
-        shape: heart
-        location: left_bicep
+      tattoo.shape: heart
+      tattoo.location: left_bicep
   handlers:
     look_at:
       super: true
@@ -332,9 +329,7 @@ Bob:
           convey("Bob has a heart tattoo on his left bicep", $actor)
         {{#end}}
     tear_off_shirt:
-      accepts: [Person]
-      within: 2.0
-      after: [look_at]
+      when: "{{ hasType($actor, 'Person') && within($actor, $self, 2.0) }}"
       action: |
         set("wearing_shirt", false)
 ```
