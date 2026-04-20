@@ -32,6 +32,12 @@ It is the shortest current snapshot of the Facsimile spec.
 - Perceive events do not themselves fan out further perceive events. `observers` is always `[]` on synthetic perceive events. This prevents infinite regress.
 - Perceive event bodies reference the original event by id rather than inlining it.
 - Perception modality is flat in v1. The event type plus the perception adapter together define what "observing" means (hearers for `talk_to`, seers for `look_at`, etc.). Structured modality is not a v1 concern.
+- Handler chaining: `super: true` on a subclass handler runs the parent's handler body first, then the subclass's. There is no explicit `super()` call in action bodies. Without `super: true`, the subclass fully replaces the parent's handler.
+- What merges under inheritance: only handler action bodies. Handler metadata (`accepts`, `within`, `after`, etc.) is not merged. A subclass either redeclares metadata (overriding) or omits it (inheriting parent's wholesale).
+- Trait override: traits address per-leaf via dotted paths. Most-derived wins per leaf. Object-shaped trait values are opaque leaves; there is no deep merge.
+- Multi-inheritance linearization: depth-first left-to-right, flat deduplication, last occurrence wins. Self always wins over ancestors.
+- Anchors under inheritance: later-in-chain wins per anchor name, same rule as handlers and traits.
+- Chain through multiple ancestors: the engine walks the linearized chain and runs each `super: true` handler in order from base to self. A non-super handler in the chain terminates inheritance at that point.
 
 ## Detailed References
 
@@ -40,7 +46,6 @@ It is the shortest current snapshot of the Facsimile spec.
 
 ## Open Questions
 
-- Inheritance and `super: true` semantics: handler body merging vs chaining, trait override order under multi-inheritance, diamond resolution.
 - Handler precondition vocabulary: fixed set (`accepts`, `within`, `after`) vs open-ended `when:` predicate reading committed state.
 - Event refusal when preconditions fail: silent drop, `refused` event, or error effect?
 - Cascade and reentrancy for ordinary events: cascade depth limit, termination guarantees, shape of the event log across cascades.

@@ -59,6 +59,45 @@ Notes:
 - `handlers` and `anchors` live primarily in the definition layer.
 - `tags` are a lightweight classification mechanism for filtering and conventions.
 
+### Inheritance
+
+`inherits` resolves into a linearized chain (the MRO) that the engine walks to produce the effective `EntityDef`.
+
+#### Linearization
+
+- Depth-first, left-to-right.
+- Flat deduplication: if an ancestor appears multiple times, only the last occurrence is kept.
+- Self always wins over ancestors.
+
+There is no Python-style C3 diamond enforcement in v1. If the author creates an ambiguous diamond, the rule above resolves it deterministically but without ceremony.
+
+#### Traits
+
+Traits address per-leaf via dotted paths (`tattoo.shape`, `beliefs.police`). Most-derived wins per leaf. Object-shaped trait values are treated as opaque leaves — there is no deep object merge. Authors who want composition split the value into paths.
+
+#### Anchors
+
+Anchors are replaced per name. The most-derived `AnchorDef` for a given name wins.
+
+#### Handlers
+
+By default, a subclass handler fully replaces the parent's handler for that name.
+
+A subclass handler may declare `super: true`, in which case:
+
+1. the parent's action body runs first,
+2. then the subclass's action body runs.
+
+Both bodies run against the same handler invocation and return effects that are concatenated in order (parent effects first, subclass effects second).
+
+The engine walks the linearized chain to resolve chaining. A chain runs from base to self, including every ancestor that has `super: true` on that handler. A non-super handler anywhere in the chain terminates inheritance at that point — that ancestor is treating its own parent as fully replaced.
+
+There is no explicit `super()` call inside action bodies. Subclass bodies always run after parent bodies. Fine-grained control ("run parent in the middle of subclass logic") is not a v1 concern.
+
+#### Handler metadata merging
+
+Handler metadata (`accepts`, `within`, `after`, and any future structured preconditions) is not merged under `super: true`. A subclass either redeclares metadata (overriding wholesale) or omits it (inheriting parent's metadata wholesale). This avoids the ambiguity of partial predicate merges where a missing field could mean either "inherit" or "clear."
+
 ### `EntityState`
 
 `EntityState` is the mutable runtime shape of an entity.
