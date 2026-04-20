@@ -51,6 +51,7 @@ export type EntityDefInput = {
     public: Record<TraitPath, TraitValue>;
     private: Record<TraitPath, TraitValue>;
   };
+  scripts: Record<string, string>;
   handlers: Record<HandlerName, HandlerDef>;
   anchors: Record<AnchorName, AnchorDef>;
   transform: TransformDef | null;

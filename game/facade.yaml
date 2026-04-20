@@ -21,18 +21,8 @@ world:
     traits:
       public:
         location: Apartment
-    handlers:
-      look_at:
-        action: say(getTrait($self, "description"))
-      talk_to:
-        action: say(getTrait($self, "greeting"))
 
-  Item:
-    handlers:
-      look_at:
-        action: say(getTrait($self, "description"))
-      use:
-        action: say(getTrait($self, "use_text"))
+  Item: {}
 
   Room:
     handlers:
@@ -52,10 +42,6 @@ world:
       public:
         location: Apartment
         description: Trip is polished and restless, hovering near the bar cart like hosting is a performance.
-        greeting: Trip smiles too quickly. "Hey, there you are. Come in, come in. Can I get you a drink?"
-        talk_1: Trip laughs at the wrong moment. "We're good. Everything's good. Grace worries too much."
-        talk_2: Trip lowers his voice. "You know Grace. She makes every little thing into a referendum on my entire personality."
-        talk_3: Trip grips his glass. "Sometimes I think I built this whole apartment so nobody would ask what I actually wanted."
         mood: anxious
         trust: 0
         talks: 0
@@ -63,19 +49,40 @@ world:
       private:
         insecurity: Trip worries Grace thinks he is shallow.
         secret.sexuality: gay
+    scripts:
+      greeting: say("Hey, there you are. Come in, come in. Can I get you a drink?")
+      talk_1: say("We're good. Everything's good. Grace worries too much.")
+      talk_2: say("You know Grace. She makes every little thing into a referendum on my entire personality.")
+      talk_3: say("Sometimes I think I built this whole apartment so nobody would ask what I actually wanted.")
+      offer_drinks: say("Great, yes, drinks. Drinks make everything easier.")
+      pour_drink_1: |
+        emit({ type: "perform/pour_drink", actor: $self, target: BarCart, body: { drink: "gin" }, observers: [Grace, Player] })
+        say("Just one. Hosting requires stamina.")
+      pour_drink_2: |
+        emit({ type: "perform/finish_drink", actor: $self, target: BarCart, body: { count: getTrait($self, "drinks") }, observers: [Grace, Player] })
+        say("See? Now we're actually talking.")
+      pour_drink_3: |
+        emit({ type: "perform/stare_into_glass", actor: $self, target: BarCart, body: null, observers: [Grace, Player] })
+        say("Fine. You want honesty? I'm gay. Secretly, stupidly, impossibly gay. There. Happy?")
+      drink_full: say("No. No more. I am... fully drunk.")
+      wedding_photo_comment: say("Beautiful day.")
     handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      talk_to:
+        action: run($self.greeting)
       talk_1:
         action: |
           setTrait($self, "talks", 1)
-          say(getTrait($self, "talk_1"))
+          run($self.talk_1)
       talk_2:
         action: |
           setTrait($self, "talks", 2)
-          say(getTrait($self, "talk_2"))
+          run($self.talk_2)
       talk_3:
         action: |
           setTrait($self, "talks", 3)
-          say(getTrait($self, "talk_3"))
+          run($self.talk_3)
 
   Grace:
     inherits: [Person]
@@ -83,11 +90,6 @@ world:
       public:
         location: Apartment
         description: Grace stands by the couch, composed but tense, watching Trip more than she watches you.
-        greeting: Grace gives you a small, careful smile. "I'm glad you came. We needed a normal evening."
-        talk_1: Grace folds her arms. "Trip wants tonight to feel effortless. That usually means I'm supposed to disappear into the decor."
-        talk_2: Grace looks toward the kitchen. "I shouldn't talk like this. Not with Trip right here pretending not to listen."
-        talk_3: Grace exhales. "You always ask the thing I'm trying not to answer. Maybe that's why I still trust you."
-        affair_confession: Grace glances toward the wedding photo. "When we were first married, I did something cruel. I had an affair. I told myself it was because I felt invisible."
         mood: guarded
         trust: 0
         talks: 0
@@ -95,28 +97,39 @@ world:
       private:
         resentment: Grace feels boxed in by Trip's taste and expectations.
         secret.affair: Grace had an affair when she and Trip were first married.
+    scripts:
+      greeting: say("I'm glad you came. We needed a normal evening.")
+      talk_1: say("Trip wants tonight to feel effortless. That usually means I'm supposed to disappear into the decor.")
+      talk_2: say("I shouldn't talk like this. Not with Trip right here pretending not to listen.")
+      talk_3: say("You always ask the thing I'm trying not to answer. Maybe that's why I still trust you.")
+      affair_confession: say("When we were first married, I did something cruel. I had an affair. I told myself it was because I felt invisible.")
+      painting_comment: say("I used to paint things that felt less... staged.")
     handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      talk_to:
+        action: run($self.greeting)
       talk_1:
         action: |
           setTrait($self, "talks", 1)
           setTrait($self, "trust", 1)
-          say(getTrait($self, "talk_1"))
+          run($self.talk_1)
       talk_2:
         action: |
           setTrait($self, "talks", 2)
           setTrait($self, "trust", 2)
-          say(getTrait($self, "talk_2"))
+          run($self.talk_2)
       talk_3:
         action: |
           setTrait($self, "talks", 3)
           setTrait($self, "trust", 3)
-          say(getTrait($self, "talk_3"))
+          run($self.talk_3)
       confess_affair:
         action: |
           setTrait($self, "affair_revealed", true)
           learn("Player", $self, "secret.affair", getTrait($self, "secret.affair"), { eventId: $event.id, actor: $self, note: "confession" })
-          learn("Trip", $self, "secret.affair", getTrait($self, "secret.affair"), { eventId: $event.id, actor: $self, note: "overheard confession" })
-          say(getTrait($self, "affair_confession"))
+          learn(Trip, $self, "secret.affair", getTrait($self, "secret.affair"), { eventId: $event.id, actor: $self, note: "overheard confession" })
+          run($self.affair_confession)
 
   Apartment:
     inherits: [Room]
@@ -130,7 +143,14 @@ world:
       public:
         location: Apartment
         description: A modern couch with stiff cushions. It looks chosen more for guests than comfort.
-        use_text: You sit for a moment. The room feels quieter, but Trip keeps standing.
+    scripts:
+      use: |
+        emit({ type: "sit_on", actor: $actor, target: $self, body: null, observers: [Grace, Trip] })
+    handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      use:
+        action: run($self.use)
 
   BarCart:
     inherits: [Item]
@@ -139,32 +159,29 @@ world:
       public:
         location: Apartment
         description: The bar cart is immaculate. Wine, gin, tonic, and polished glasses are lined up with nervous care.
-        use_text: Trip brightens. "Great, yes, drinks. Drinks make everything easier." Grace looks away.
-        drink_1: Trip pours himself a drink too quickly. "Just one. Hosting requires stamina."
-        drink_2: Trip finishes another drink. His charm loosens into something brittle. "See? Now we're actually talking."
-        drink_3: Trip stares into his glass. "Fine. You want honesty? I'm gay. Secretly, stupidly, impossibly gay. There. Happy?" Grace goes still.
-        drink_full: Trip reaches for the bottle, misses, and laughs once. "No. No more. I am... fully drunk."
+    scripts:
+      use: run(Trip.offer_drinks)
     handlers:
       look_at:
         action: say(getTrait($self, "description"))
       use:
-        action: say(getTrait($self, "use_text"))
+        action: run($self.use)
       serve_drink_1:
         action: |
-          setTrait("Trip", "drinks", 1)
-          say(getTrait($self, "drink_1"))
+          setTrait(Trip, "drinks", 1)
+          run(Trip.pour_drink_1)
       serve_drink_2:
         action: |
-          setTrait("Trip", "drinks", 2)
-          say(getTrait($self, "drink_2"))
+          setTrait(Trip, "drinks", 2)
+          run(Trip.pour_drink_2)
       serve_drink_3:
         action: |
-          setTrait("Trip", "drinks", 3)
-          learn("Player", "Trip", "secret.sexuality", getTrait("Trip", "secret.sexuality"), { eventId: $event.id, actor: "Trip", note: "drunken confession" })
-          learn("Grace", "Trip", "secret.sexuality", getTrait("Trip", "secret.sexuality"), { eventId: $event.id, actor: "Trip", note: "drunken confession" })
-          say(getTrait($self, "drink_3"))
+          setTrait(Trip, "drinks", 3)
+          learn(Player, Trip, "secret.sexuality", getTrait(Trip, "secret.sexuality"), { eventId: $event.id, actor: Trip, note: "drunken confession" })
+          learn(Grace, Trip, "secret.sexuality", getTrait(Trip, "secret.sexuality"), { eventId: $event.id, actor: Trip, note: "drunken confession" })
+          run(Trip.pour_drink_3)
       serve_drink_full:
-        action: say(getTrait($self, "drink_full"))
+        action: run(Trip.drink_full)
 
   Painting:
     inherits: [Item]
@@ -172,7 +189,15 @@ world:
       public:
         location: Apartment
         description: A large abstract painting dominates the wall. Bold shapes, expensive frame, no warmth.
-        use_text: You study the painting. Grace notices. "I used to paint things that felt less... staged."
+    scripts:
+      use: |
+        emit({ type: "study", actor: $actor, target: $self, body: null, observers: [Grace, Trip] })
+        run(Grace.painting_comment)
+    handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      use:
+        action: run($self.use)
 
   WeddingPhoto:
     inherits: [Item]
@@ -180,4 +205,12 @@ world:
       public:
         location: Apartment
         description: Trip and Grace smile in the wedding photo, but Grace's hand is clenched around the bouquet.
-        use_text: You pick up the photo. Trip says, "Beautiful day." Grace says nothing.
+    scripts:
+      use: |
+        emit({ type: "pick_up", actor: $actor, target: $self, body: null, observers: [Grace, Trip] })
+        run(Trip.wedding_photo_comment)
+    handlers:
+      look_at:
+        action: say(getTrait($self, "description"))
+      use:
+        action: run($self.use)

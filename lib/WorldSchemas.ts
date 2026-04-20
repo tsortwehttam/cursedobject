@@ -48,6 +48,7 @@ export const EntityDefSchema = z.object({
   type: z.string().nullable().default(null),
   inherits: z.array(z.string()).default([]),
   traits: TraitBagSchema,
+  scripts: z.record(z.string()).default({}),
   handlers: z.record(z.string(), HandlerDefSchema).default({}),
   anchors: z.record(z.string(), AnchorDefSchema).default({}),
   transform: TransformDefSchema.nullable().default(null),

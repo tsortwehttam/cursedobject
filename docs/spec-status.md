@@ -58,6 +58,11 @@ It is the shortest current snapshot of the Facsimile spec.
 - V1 has a fixed initial script helper surface split into pure helpers and action helpers.
 - Authored YAML validates through a minimum Zod schema set before runtime construction.
 - The data model includes a worked event-run trace showing dispatch, effects, perception fanout, queue order, and committed state.
+- Authored script snippets live on entity definitions under `scripts`, not in runtime traits.
+- Entity scripts can be invoked by reference with `run(Entity.script_name)` and execute with the script owner as `$self`.
+- Authored expressions can refer to entity ids directly, for example `Trip` instead of `"Trip"`.
+- Runtime handler expressions use the shared `ScriptEvaluator`/`TokenizerLexer` path.
+- Dialogue emitted with `say(...)` renders sync `{{...}}` interpolation through `TemplateHelpers`.
 
 ## Detailed References
 
@@ -67,6 +72,6 @@ It is the shortest current snapshot of the Facsimile spec.
 ## Remaining Implementation Work
 
 - Implement full handler inheritance chaining.
-- Expand the script action parser beyond simple helper-call lines.
+- Expand the script action parser beyond simple helper-call lines, especially `<<#directive ...>>` blocks.
 - Implement the typed query API and query-backed stdlib helpers.
 - Add adapter-backed `<<...>>` directives for AI and navigation.

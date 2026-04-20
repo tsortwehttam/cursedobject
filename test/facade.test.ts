@@ -41,6 +41,7 @@ const talk = applyEvent(
 
 assert.equal(talk.ok, true);
 assert.match(getRunText(talk).join("\n"), /disappear into the decor/);
+assert.equal(Object.prototype.hasOwnProperty.call(world.state.Grace?.traits ?? {}, "talk_1"), false);
 
 const secondTalk = applyEvent(
   {
@@ -89,7 +90,7 @@ const use = applyEvent(
 assert.equal(use.ok, true);
 assert.match(getRunText(use).join("\n"), /Just one/);
 
-applyEvent(
+const secondDrink = applyEvent(
   {
     type: "serve_drink_2",
     actor: "Player",
@@ -100,6 +101,10 @@ applyEvent(
   world,
   clock,
 );
+assert.equal(secondDrink.ok, true);
+assert.match(getRunText(secondDrink).join("\n"), /actually talking/);
+assert.equal(world.state.Trip?.traits.drinks, 2);
+assert.equal(secondDrink.committed.some((event) => event.type === "perform/finish_drink" && event.actor === "Trip"), true);
 
 const drunk = applyEvent(
   {

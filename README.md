@@ -30,6 +30,32 @@ Current agreed decisions and remaining open questions are summarized in [`docs/s
 - Let the same world run with different renderers and input systems.
 - Prefer explicit data and composable primitives over special-case engine features.
 
+## Authoring Model
+
+Facsimile should be authored as a simulation first, not as a tree of scripted story beats.
+
+The ideal shape is:
+
+- entities have rich, explicit traits
+- handlers stay thin and operational
+- AI and other adapters produce situated responses from committed world state
+- scripts exist for deliberate authored beats, cut scenes, and specific actions that need exact control
+
+Authors should primarily describe what entities are, what they know, what is true about them, what is hidden, what they can perceive, and how interactions generally update state. For a character such as Grace, this means authoring her appearance, history, preferences, relationships, current mood, private affair, visible behavior, and conditions under which private facts become relevant. It should not require writing every possible line she might say.
+
+Traits are the main grounding surface for emergent behavior. Public traits are generally available to perception and prompt assembly when the observer can perceive them. Private traits are true of the subject but should not be automatically shown to other entities or injected into AI context. A private trait can become known through explicit events, knowledge records, inference, confession, discovery, or authored state transitions.
+
+Handlers should usually answer small operational questions:
+
+- can this action happen now?
+- what state changes does it cause?
+- what events or adapter-backed work should follow?
+- what new facts become visible or known?
+
+They should avoid embedding multi-step prose beats where structured events would be clearer. For example, serving a drink is not one string like `Trip pours himself a drink. "Just one."` It is at least a physical action event and a speech event. A renderer, terminal UI, replay viewer, or AI prompt assembler can decide how to present those committed events.
+
+This keeps inversion of control in the right place. Authored data defines the simulation and its constraints. The engine assembles entity-relative views of the world. AI can then generate dialogue, narration, decisions, or other adapter-backed outputs from what the actor can actually perceive, remember, infer, or know. Scripted snippets remain available, but they are the exception for authored specificity, not the default way to make characters feel alive.
+
 ## Non-Goals
 
 - Facsimile is not a full 3D engine.

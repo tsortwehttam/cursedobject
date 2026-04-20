@@ -243,6 +243,7 @@ export type TVars = Record<string, SerialValue>;
 
 export function safeGet(obj: TVars, path: string): SerialValue {
   if (hasInvalidPathSegment(path)) return null;
+  if (Object.prototype.hasOwnProperty.call(obj, path)) return obj[path] ?? null;
   const parts = path.split(".");
   let current: SerialValue = obj;
   for (const part of parts) {

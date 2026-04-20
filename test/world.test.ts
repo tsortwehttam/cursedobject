@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { applyEvent, createWorld } from "../lib/WorldRuntime";
+import { applyEvent, createWorld, getRunText } from "../lib/WorldRuntime";
 import { AuthoredWorld } from "../lib/WorldTypes";
 
 let time = 999;
@@ -20,6 +20,7 @@ const authored: AuthoredWorld = {
       },
       private: {},
     },
+    scripts: {},
     handlers: {},
     anchors: {},
     transform: null,
@@ -29,6 +30,7 @@ const authored: AuthoredWorld = {
     type: null,
     inherits: ["Person"],
     traits: { public: {}, private: {} },
+    scripts: {},
     handlers: {},
     anchors: {},
     transform: null,
@@ -40,14 +42,23 @@ const authored: AuthoredWorld = {
     traits: {
       public: {
         hair_color: "blue",
+        otherEntity: "Bob",
       },
       private: {},
     },
+    scripts: {
+      announce: 'say("I am {{ $self }}.")',
+    },
     handlers: {
       look_at: {
-        when: "{{ hasType($actor, 'Person') }}",
+        when: "{{ hasType($actor, 'Person') && getTrait($actor, 'can_see') }}",
         super: false,
         action: 'convey($self, "hair_color", $actor)',
+      },
+      test_script_ref: {
+        when: null,
+        super: false,
+        action: "run(otherEntity.announce)",
       },
     },
     anchors: {},
@@ -58,6 +69,7 @@ const authored: AuthoredWorld = {
     type: null,
     inherits: ["Person"],
     traits: { public: {}, private: {} },
+    scripts: {},
     handlers: {
       "perceive/look_at": {
         when: null,
@@ -74,6 +86,7 @@ const authored: AuthoredWorld = {
     type: null,
     inherits: ["Person"],
     traits: { public: {}, private: {} },
+    scripts: {},
     handlers: {},
     anchors: {},
     transform: null,
@@ -108,3 +121,18 @@ assert.deepEqual(
 );
 assert.equal(world.knowledge["Alice:Bob:hair_color"]?.value, "blue");
 assert.equal(world.knowledge["Carol:Alice:looked_at"]?.value, "evt_1");
+
+const scriptResult = applyEvent(
+  {
+    type: "test_script_ref",
+    actor: "Alice",
+    target: "Bob",
+    body: null,
+    observers: [],
+  },
+  world,
+  clock,
+);
+
+assert.equal(scriptResult.ok, true);
+assert.deepEqual(getRunText(scriptResult), ["I am Bob."]);

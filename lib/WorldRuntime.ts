@@ -1,4 +1,6 @@
 import { AuthoredWorldSchema } from "./WorldSchemas";
+import { ExprEvalFunc, buildEvalFunctions, evaluateExprCore, parseExprCore } from "./ScriptEvaluator";
+import { renderHandlebarsTemplate } from "./TemplateHelpers";
 import {
   ApplyError,
   ApplyResult,
@@ -15,13 +17,12 @@ import {
   KnowledgeVia,
   RunId,
   RunState,
-  TraitValue,
   WorldState,
 } from "./WorldTypes";
+import { SerialValue } from "./CoreTypings";
 
 const MAX_EVENTS_PER_RUN = 1000;
 
-type RuntimeFunc = (...args: TraitValue[]) => TraitValue;
 type QueuedEvent = {
   event: EventInput;
   parent: EventId | null;
@@ -175,6 +176,7 @@ function resolveDef(id: EntityId, world: AuthoredWorld, stack: EntityId[]): Enti
       type: id,
       inherits: [],
       traits: { public: {}, private: {} },
+      scripts: {},
       handlers: {},
       anchors: {},
       transform: null,
@@ -188,6 +190,7 @@ function resolveDef(id: EntityId, world: AuthoredWorld, stack: EntityId[]): Enti
     type: def.type ?? id,
     inherits: def.inherits,
     traits: { public: {}, private: {} },
+    scripts: {},
     handlers: {},
     anchors: {},
     transform: null,
@@ -197,6 +200,7 @@ function resolveDef(id: EntityId, world: AuthoredWorld, stack: EntityId[]): Enti
   for (const base of bases) {
     merged.traits.public = { ...merged.traits.public, ...base.traits.public };
     merged.traits.private = { ...merged.traits.private, ...base.traits.private };
+    merged.scripts = { ...merged.scripts, ...base.scripts };
     merged.handlers = { ...merged.handlers, ...base.handlers };
     merged.anchors = { ...merged.anchors, ...base.anchors };
     merged.tags = [...merged.tags, ...base.tags];
@@ -205,6 +209,7 @@ function resolveDef(id: EntityId, world: AuthoredWorld, stack: EntityId[]): Enti
 
   merged.traits.public = { ...merged.traits.public, ...def.traits.public };
   merged.traits.private = { ...merged.traits.private, ...def.traits.private };
+  merged.scripts = { ...merged.scripts, ...def.scripts };
   merged.handlers = { ...merged.handlers, ...def.handlers };
   merged.anchors = { ...merged.anchors, ...def.anchors };
   merged.transform = def.transform ?? merged.transform;
@@ -240,35 +245,46 @@ function findHandler(world: WorldState, event: EventRecord): HandlerDef | null {
 function canRunHandler(world: WorldState, event: EventRecord, handler: HandlerDef): boolean {
   if (!handler.when) return true;
   const expr = unwrapTemplateExpr(handler.when);
-  const result = evaluateRuntimeExpr(expr, createVars(world, event), createPureFunctions(world));
+  const result = evaluateRuntimeExpr(expr, createVars(world, event, event.target), createPureFunctions(world));
   return isTruthy(result);
 }
 
 function evaluateAction(world: WorldState, event: EventRecord, action: string) {
   const effects: Effect[] = [];
   const emits: EventInput[] = [];
-  const funcs = createActionFunctions(world, event, effects, emits);
-  const vars = createVars(world, event);
-
-  for (const raw of action.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith("{{") && line.endsWith("}}")) {
-      continue;
-    }
-    evaluateRuntimeExpr(line, vars, funcs);
-  }
+  evaluateScript(world, event, event.target, action, effects, emits);
 
   return { effects, emits };
 }
 
-function createVars(world: WorldState, event: EventRecord) {
-  const self = event.target;
-  const vars: Record<string, TraitValue> = {
+function evaluateScript(
+  world: WorldState,
+  event: EventRecord,
+  self: EntityId | null,
+  script: string,
+  effects: Effect[],
+  emits: EventInput[],
+) {
+  const funcs = createActionFunctions(world, event, self, effects, emits);
+  const vars = createVars(world, event, self);
+
+  for (const raw of script.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("{{") && line.endsWith("}}")) {
+      evaluateRuntimeExpr(unwrapTemplateExpr(line), vars, funcs);
+      continue;
+    }
+    evaluateRuntimeExpr(line, vars, funcs);
+  }
+}
+
+function createVars(world: WorldState, event: EventRecord, self: EntityId | null) {
+  const vars: Record<string, SerialValue> = {
     "$actor": event.actor,
     "$target": event.target,
     "$self": self,
-    "$event": event,
+    "$event": serializeEvent(event),
   };
   if (self) {
     const state = world.state[self];
@@ -278,10 +294,20 @@ function createVars(world: WorldState, event: EventRecord) {
       }
     }
   }
+  for (const def of Object.values(world.defs)) {
+    vars[def.id] = def.id;
+    for (const key of Object.keys(def.scripts)) {
+      vars[`${def.id}.${key}`] = `${def.id}.${key}`;
+    }
+  }
+  addScopedScriptRefs(vars, world, "$self", self);
+  addScopedScriptRefs(vars, world, "$actor", event.actor);
+  addScopedScriptRefs(vars, world, "$target", event.target);
+  addValueScriptRefs(vars, world);
   return vars;
 }
 
-function createPureFunctions(world: WorldState): Record<string, RuntimeFunc> {
+function createPureFunctions(world: WorldState): Record<string, ExprEvalFunc> {
   return {
     hasType: (entity, type) => {
       if (typeof entity !== "string" || typeof type !== "string") return false;
@@ -295,6 +321,10 @@ function createPureFunctions(world: WorldState): Record<string, RuntimeFunc> {
       if (typeof entity !== "string" || typeof path !== "string") return null;
       return world.state[entity]?.traits[path] ?? null;
     },
+    getScript: (entity, key) => {
+      if (typeof entity !== "string" || typeof key !== "string") return null;
+      return world.defs[entity]?.scripts[key] ?? null;
+    },
     hasTrait: (entity, path) => {
       if (typeof entity !== "string" || typeof path !== "string") return false;
       return Object.prototype.hasOwnProperty.call(world.state[entity]?.traits ?? {}, path);
@@ -307,14 +337,16 @@ function createPureFunctions(world: WorldState): Record<string, RuntimeFunc> {
 function createActionFunctions(
   world: WorldState,
   event: EventRecord,
+  self: EntityId | null,
   effects: Effect[],
   emits: EventInput[],
-): Record<string, RuntimeFunc> {
+): Record<string, ExprEvalFunc> {
+  const vars = createVars(world, event, self);
   return {
     ...createPureFunctions(world),
     set: (path, value) => {
-      if (!event.target || typeof path !== "string") return null;
-      effects.push({ type: "set_trait", entity: event.target, path, value });
+      if (!self || typeof path !== "string") return null;
+      effects.push({ type: "set_trait", entity: self, path, value });
       return null;
     },
     setTrait: (entity, path, value) => {
@@ -342,13 +374,20 @@ function createActionFunctions(
       if (eventInput) emits.push(eventInput);
       return null;
     },
+    run: (ref, key) => {
+      const script = resolveScript(world, ref, key);
+      if (!script) return null;
+      evaluateScript(world, event, script.entity, script.body, effects, emits);
+      return null;
+    },
     say: (text) => {
       if (typeof text !== "string") return null;
+      const body = renderHandlebarsTemplate(text, (expr) => evaluateRuntimeExpr(expr, vars, createPureFunctions(world)));
       emits.push({
         type: "say",
-        actor: event.target,
+        actor: self,
         target: event.actor,
-        body: text,
+        body,
         observers: [],
       });
       return null;
@@ -356,7 +395,7 @@ function createActionFunctions(
   };
 }
 
-function normalizeVia(value: TraitValue, event: EventRecord): KnowledgeVia {
+function normalizeVia(value: SerialValue, event: EventRecord): KnowledgeVia {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return {
       eventId: typeof value.eventId === "string" ? value.eventId : event.id,
@@ -367,7 +406,7 @@ function normalizeVia(value: TraitValue, event: EventRecord): KnowledgeVia {
   return { eventId: event.id, actor: event.actor, note: null };
 }
 
-function normalizeEventInput(value: TraitValue): EventInput | null {
+function normalizeEventInput(value: SerialValue): EventInput | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   if (typeof value.type !== "string") return null;
   return {
@@ -377,6 +416,41 @@ function normalizeEventInput(value: TraitValue): EventInput | null {
     body: value.body ?? null,
     observers: Array.isArray(value.observers) ? value.observers.filter((id): id is string => typeof id === "string") : null,
   };
+}
+
+function addScopedScriptRefs(vars: Record<string, SerialValue>, world: WorldState, name: string, entity: EntityId | null) {
+  if (!entity) return;
+  const def = world.defs[entity];
+  if (!def) return;
+  for (const key of Object.keys(def.scripts)) {
+    vars[`${name}.${key}`] = `${entity}.${key}`;
+  }
+}
+
+function addValueScriptRefs(vars: Record<string, SerialValue>, world: WorldState) {
+  for (const [name, value] of Object.entries(vars)) {
+    if (typeof value !== "string") continue;
+    const def = world.defs[value];
+    if (!def) continue;
+    for (const key of Object.keys(def.scripts)) {
+      vars[`${name}.${key}`] = `${value}.${key}`;
+    }
+  }
+}
+
+function resolveScript(world: WorldState, ref: SerialValue, key: SerialValue): { entity: EntityId; body: string } | null {
+  if (typeof ref !== "string") return null;
+  const parsed = typeof key === "string" ? { entity: ref, key } : parseScriptRef(ref);
+  if (!parsed) return null;
+  const body = world.defs[parsed.entity]?.scripts[parsed.key];
+  if (typeof body !== "string") return null;
+  return { entity: parsed.entity, body };
+}
+
+function parseScriptRef(ref: string): { entity: EntityId; key: string } | null {
+  const i = ref.lastIndexOf(".");
+  if (i <= 0 || i >= ref.length - 1) return null;
+  return { entity: ref.slice(0, i), key: ref.slice(i + 1) };
 }
 
 function applyEffect(world: WorldState, effect: Effect, event: EventRecord, options: RuntimeOptions) {
@@ -452,138 +526,27 @@ function unwrapTemplateExpr(text: string) {
   return trimmed;
 }
 
-function evaluateRuntimeExpr(expr: string, vars: Record<string, TraitValue>, funcs: Record<string, RuntimeFunc>): TraitValue {
-  const parts = splitTopLevel(expr, "&&");
-  if (parts.length > 1) {
-    for (const part of parts) {
-      if (!isTruthy(evaluateRuntimeExpr(part, vars, funcs))) return false;
-    }
-    return true;
-  }
-
-  const call = parseCall(expr.trim());
-  if (call) {
-    const fn = funcs[call.name];
-    if (!fn) return null;
-    return fn(...call.args.map((arg) => parseValue(arg, vars, funcs)));
-  }
-
-  return parseValue(expr, vars, funcs);
+function evaluateRuntimeExpr(expr: string, vars: Record<string, SerialValue>, funcs: Record<string, ExprEvalFunc>): SerialValue {
+  const ast = parseExprCore(expr);
+  if (!ast) return null;
+  return evaluateExprCore(ast, vars, buildEvalFunctions(funcs));
 }
 
-function parseCall(expr: string): { name: string; args: string[] } | null {
-  const open = expr.indexOf("(");
-  if (open < 1 || !expr.endsWith(")")) return null;
-  const name = expr.slice(0, open).trim();
-  if (!/^[A-Za-z_$][\w$]*$/.test(name)) return null;
-  const body = expr.slice(open + 1, -1);
-  return { name, args: splitArgs(body) };
+function serializeEvent(event: EventRecord): Record<string, SerialValue> {
+  return {
+    id: event.id,
+    run: event.run,
+    parent: event.parent,
+    type: event.type,
+    actor: event.actor,
+    target: event.target,
+    body: event.body,
+    at: event.at,
+    observers: event.observers,
+  };
 }
 
-function parseValue(expr: string, vars: Record<string, TraitValue>, funcs: Record<string, RuntimeFunc>): TraitValue {
-  const value = expr.trim();
-  if (!value) return null;
-  if (value === "null" || value === "undefined") return null;
-  if (value === "true") return true;
-  if (value === "false") return false;
-  if (isQuoted(value)) return value.slice(1, -1);
-  if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
-  if (value.startsWith("[") && value.endsWith("]")) {
-    return splitArgs(value.slice(1, -1)).map((part) => parseValue(part, vars, funcs));
-  }
-  if (value.startsWith("{") && value.endsWith("}")) {
-    return parseObject(value.slice(1, -1), vars, funcs);
-  }
-  if (value.startsWith("$")) {
-    return getVar(vars, value);
-  }
-  if (parseCall(value)) return evaluateRuntimeExpr(value, vars, funcs);
-  return value;
-}
-
-function parseObject(
-  body: string,
-  vars: Record<string, TraitValue>,
-  funcs: Record<string, RuntimeFunc>,
-): Record<string, TraitValue> {
-  const out: Record<string, TraitValue> = {};
-  for (const entry of splitArgs(body)) {
-    const parts = splitTopLevel(entry, ":");
-    if (parts.length < 2) continue;
-    const key = parts[0]?.trim() ?? "";
-    if (!key) continue;
-    out[stripQuotes(key)] = parseValue(parts.slice(1).join(":").trim(), vars, funcs);
-  }
-  return out;
-}
-
-function splitArgs(body: string): string[] {
-  return splitTopLevel(body, ",").map((part) => part.trim()).filter(Boolean);
-}
-
-function splitTopLevel(body: string, delim: string): string[] {
-  const out: string[] = [];
-  let start = 0;
-  let depth = 0;
-  let quote = "";
-  let escape = false;
-  for (let i = 0; i < body.length; i += 1) {
-    const ch = body[i] ?? "";
-    if (quote) {
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (ch === "\\") {
-        escape = true;
-        continue;
-      }
-      if (ch === quote) {
-        quote = "";
-      }
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth += 1;
-      continue;
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth -= 1;
-      continue;
-    }
-    if (depth === 0 && body.startsWith(delim, i)) {
-      out.push(body.slice(start, i));
-      i += delim.length - 1;
-      start = i + 1;
-    }
-  }
-  out.push(body.slice(start));
-  return out;
-}
-
-function getVar(vars: Record<string, TraitValue>, path: string): TraitValue {
-  const parts = path.split(".");
-  let current: TraitValue = vars[parts[0] ?? ""] ?? null;
-  for (const part of parts.slice(1)) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) return null;
-    current = current[part] ?? null;
-  }
-  return current;
-}
-
-function isQuoted(value: string): boolean {
-  return (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
-}
-
-function stripQuotes(value: string): string {
-  return isQuoted(value) ? value.slice(1, -1) : value;
-}
-
-function isTruthy(value: TraitValue): boolean {
+function isTruthy(value: SerialValue): boolean {
   if (value === null) return false;
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
