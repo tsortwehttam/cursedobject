@@ -144,12 +144,15 @@ A handler should define things like:
 - under what conditions it is available
 - range or spatial requirements
 - ordering constraints
-- who observes it
 - the logic that runs when it is invoked
 
 Handlers are how authored content meets simulation. They should be discoverable and queryable so both UI code and NPC decision systems can inspect what is currently possible.
 
 Handlers are ideally atomic and non-overlapping (this isn't a rule but a general principle). Meaning, we would not have an `accuse` action because that would be better encapslated by a character using `talk_to` to verbally give the accusation.
+
+Dispatch is always target-side. A handler lives on the entity being acted on; the event's `target` determines whose handler runs. `Painting_1.look_at` runs when someone looks at it; `move_to` dispatches to the destination; `$input.keyboard/upArrow` runs when the input system emits a keystroke. Actor-side concerns (actor type, required traits, range) are expressed as handler preconditions, not as a second handler layer.
+
+Observer reactions are modeled as synthetic perceive events. After a primary event commits, the engine emits a `perceive/<primary_type>` event to each observer (for example, `perceive/look_at`, `perceive/talk_to`). Perceive events dispatch target-side to the observer and follow the normal handler pipeline. Event type names are namespaced with `/`; `.` is reserved for trait paths.
 
 ### Anchors
 
@@ -175,7 +178,7 @@ Anchors may constrain:
 - whether they are exclusive
 - how they relate spatially to the parent entity
 
-Anchors should stay generic. They should define attachment constraints and relative transforms, but should not absorb unrelated systems unless that creates real executional leverage. Navigation may turn out to be a separate concept rather than an extension of anchors.
+Anchors should stay generic. They should define attachment constraints and relative transforms, but should not absorb unrelated systems. Navigation is an adapter-backed concept, not an anchor extension (see Spatial Model and Navigation below).
 
 ### Events
 
@@ -190,6 +193,8 @@ Examples:
 ```
 
 Events are not entities. They are immutable records of what happened.
+
+Events carry an optional `observers` field that controls who perceives them. Unset means the engine derives the observer set via the perception adapter. An explicit list is used as-is (for whispers, radios, letters). An empty list means the event is fully private. After a primary event commits, the engine fans out a `perceive/<primary_type>` event to each observer.
 
 The event log is important for:
 
@@ -603,8 +608,10 @@ Good prior art may come from games, simulation frameworks, narrative tools, AI a
 
 These are the main unresolved questions that should shape implementation next:
 
-- Handler dispatch and the observer model: when an event fires, whose handlers run — the target's, the actor's, both? How do bystanders who perceive an event react?
 - Inheritance and `super: true` semantics: handler body merging vs chaining, trait override order under multi-inheritance, diamond resolution.
+- Handler precondition vocabulary: fixed set (`accepts`, `within`, `after`) vs open-ended `when:` predicate reading committed state.
+- Event refusal when preconditions fail: silent drop, `refused` event, or error effect?
+- Cascade and reentrancy for ordinary events: depth limit, termination guarantees, event log shape across cascades.
 - Ongoing operations and their observation surface: how does `{{...}}` see progress and status of long-running `<<...>>` operations? Engine-managed `ongoing` map on `EntityState`, or author-modeled traits?
 - Effect ordering and conflict resolution when multiple effects write to the same trait in one commit.
 - Time, ticks, and scheduling: engine clock adapter, tick events, delayed effects.

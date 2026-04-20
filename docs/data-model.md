@@ -246,6 +246,14 @@ The minimum useful execution flow is:
 
 This keeps replay, testing, debugging, and async integration much cleaner than direct mutation.
 
+### Dispatch
+
+Dispatch is always target-side. A handler lives on the entity being acted on; the event's `target` determines whose handler runs. `Painting_1.look_at` runs when `{ type: "look_at", target: Painting_1 }` fires. `$input.keyboard/upArrow` runs when the input system emits a keyboard event. `move_to` dispatches to the destination location.
+
+There is no separate actor-side dispatch. Actor-side concerns (actor type, actor traits, range, ordering) are expressed as handler preconditions, not as a second handler layer.
+
+Event type names are namespaced with `/`. Examples: `keyboard/upArrow`, `perceive/look_at`, `perceive/talk_to`. `.` is reserved for trait paths.
+
 ## Runtime Processing Model
 
 Event processing is async at the engine boundary.
@@ -692,7 +700,7 @@ Notes:
 
 - anchors are for attachment and relative positioning
 - anchors should not be subdivided into semantic taxonomies unless those distinctions materially change engine behavior
-- navigation is still unresolved and may become a separate, entity-backed graph concept rather than an anchor extension
+- navigation is adapter-backed (see "Nav and Spatial Adapters" above), not an anchor extension
 
 ## Events
 
@@ -706,6 +714,7 @@ type EventRecord = {
   target: EntityId | null;
   body: SerialValue;
   at: number;
+  observers: EntityId[] | null;
 };
 ```
 
@@ -717,14 +726,61 @@ The event log is used for:
 - AI context assembly
 - deterministic testing
 
+### `observers`
+
+`observers` controls who is considered to have perceived the event and therefore receives the perceive fanout.
+
+- `null` (unset): the engine derives the observer set via the perception adapter (nav/LOS plus other perception rules).
+- explicit list: engine uses it as-is, skipping derivation. Useful for whispers, radios, letters, and any case where the author knows exactly who perceives.
+- `[]` (empty list): the event is fully private. Nobody perceives it.
+
+The event's `actor` is excluded from the derived observer set by default. An author can include the actor explicitly if they want the actor's own perceive handler to fire.
+
+## Perception Fanout
+
+After a primary event commits, the engine fans out a synthetic perceive event to each entity in `observers`.
+
+### Type naming
+
+The perceive event type is `perceive/<primary_type>`. If the primary event is `look_at`, each observer receives a `perceive/look_at` event. If the primary is `talk_to`, observers receive `perceive/talk_to`. This keeps dispatch uniform: observer handlers target the namespaced perceive type directly rather than a generic `perceived` with a payload switch.
+
+### Shape
+
+```ts
+// example of a fanned-out perceive event
+{
+  id: "evt_...",
+  type: "perceive/look_at",
+  actor: "Bob",            // actor of the original event
+  target: "Alice",         // the perceiver
+  body: { of: "evt_..." }, // reference to the original event id
+  at: ...,
+  observers: []            // perceive events never re-fan
+}
+```
+
+The body carries a pointer to the original event by id, not an inlined copy. Authors dereference the original from the event log if they need details.
+
+### Rules
+
+- perceive events do not themselves fan out further perceive events. `observers` is always `[]` on synthetic perceive events. This avoids infinite regress.
+- perceive events commit as their own events, in stable order by observer id, after the primary event's commit.
+- each observer's handler may emit new effects and events. Any new events it emits go through the normal pipeline, including generating their own perception fanout.
+
+### Modality
+
+Perception modality is flat in v1. The event type plus the perception adapter together determine what "observing" means — hearers for `talk_to`, seers for `look_at`, and so on. Structured modality (`{ see: [...], hear: [...] }`) is not a v1 concern and can be added additively if it earns its keep.
+
 ## Open Questions
 
 The following remain unresolved and should stay in the README-level spec until answered:
 
-- handler dispatch and observer model: whose handlers run when an event fires, and how do perceivers react?
 - inheritance and `super: true` semantics: handler body merging vs chaining, trait override order under multi-inheritance, diamond resolution
+- handler precondition vocabulary: fixed set (`accepts`, `within`, `after`) vs open-ended `when:` predicate reading committed state
+- event refusal when preconditions fail: silent drop, `refused` event, or error effect?
+- cascade and reentrancy for ordinary events: cascade depth limit, termination guarantees, log shape
+- effect ordering when multiple effects in one commit target the same trait
 - ongoing operation state: is there an engine-managed `ongoing` map on `EntityState` exposing progress and handles, or do authors model this with traits?
-- effect ordering and conflict resolution when multiple effects target the same trait in one commit
 - time, ticks, and scheduling: clock adapter, tick events, delayed effects
 - save/load format, including treatment of in-flight events
 - failure modes for adapter calls and script evaluation: retry, skip, emit failure event?
