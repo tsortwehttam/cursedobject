@@ -42,18 +42,31 @@ It is the shortest current snapshot of the Facsimile spec.
 - Failed preconditions silently drop the handler. No `refused` event, no error effect (revisit if authors need visibility).
 - Common predicate patterns (`hasType`, `hasTag`, `within`, etc.) are pure helpers in the script stdlib that read adapter-materialized committed state. Spatial predicates work because the nav adapter maintains distance/adjacency state in committed state.
 - Structured predicate sugar (`accepts`, `within` as dedicated fields, `after`, etc.) is deferred. Only added once real authored content shows the same pattern enough to justify a dedicated field.
+- Each external input starts an event run with a FIFO queue. Handlers cannot recursively call `applyEvent`; they can only emit follow-up events into the run.
+- Each event commits atomically after adapter resolution and effect validation. A multi-event run is not atomic; prior committed events are not rolled back if a later event fails.
+- Cascade order is deterministic: append perceive events sorted by observer id, then append handler-emitted follow-up events in author order.
+- Event runs have a configurable maximum committed-event limit; the v1 default is `1000`.
+- `EventRecord` includes `run` and `parent` fields for cascade tracing.
+- Effects apply in stable insertion order. If multiple effects write the same final slot in one commit, the later effect wins. There is no v1 priority system.
+- Long-running operations are engine-managed through `EntityState.ops`, not author-modeled traits. Authors read operation status and progress through pure helpers.
+- V1 uses atomic commit-on-settle per event. There are no staged or streaming commits.
+- The engine owns a monotonic logical clock. Hosts drive it; `EventRecord.at` is assigned at commit time.
+- A `tick` is just an event. Delayed actions use `schedule_event` effects.
+- V1 save/load is snapshot-based and stores committed state only. In-flight handler continuations, pending adapter calls, and active run queues are not durable.
+- Runtime failures fail the current event without committing its effects. Failed `when:` evaluation is the exception and silently drops the handler.
+- V1 has no author-facing fallback syntax for `<<...>>` directives. Retries and provider fallback are adapter policy.
+- V1 has a fixed initial script helper surface split into pure helpers and action helpers.
+- Authored YAML validates through a minimum Zod schema set before runtime construction.
+- The data model includes a worked event-run trace showing dispatch, effects, perception fanout, queue order, and committed state.
 
 ## Detailed References
 
 - core model: [data-model.md](./data-model.md)
 - high-level product/spec: [../README.md](../README.md)
 
-## Open Questions
+## Remaining Implementation Work
 
-- Cascade and reentrancy for ordinary events: cascade depth limit, termination guarantees, shape of the event log across cascades.
-- Ongoing operations and their observation surface: a `<<#navigate>>` block starts a long-running op. How does `{{...}}` see "am I navigating?" or "how far along?" Is there an engine-managed `ongoing` map on `EntityState`, or do authors model this with traits?
-- Effect ordering and conflict: when multiple effects write to the same trait in one commit, what wins — stable insertion order, author-declared priority, last-write-wins?
-- Time, ticks, and scheduling: is there an engine clock adapter? A tick event? Where does `EventRecord.at` come from, and how do delayed or scheduled actions get expressed?
-- Do we need staged or streaming commits for long-running events, or is atomic commit-on-settle enough for v1? (Narrower now that ongoing ops are kicked off via `<<...>>` and tracked in committed state, but still open.)
-- Save/load format, including how in-flight events are handled across a restore.
-- Failure modes for script evaluation and adapter calls: retry, skip, or emit a failure event?
+- Implement full handler inheritance chaining.
+- Expand the script action parser beyond simple helper-call lines.
+- Implement the typed query API and query-backed stdlib helpers.
+- Add adapter-backed `<<...>>` directives for AI and navigation.

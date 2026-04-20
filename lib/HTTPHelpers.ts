@@ -22,7 +22,8 @@ export async function fetch(
     validateStatus: () => true,
   };
   const response = await axios(config);
-  const contentType = response.headers["content-type"] || "";
+  const rawContentType = response.headers["content-type"];
+  const contentType = Array.isArray(rawContentType) ? rawContentType.join(",") : String(rawContentType ?? "");
   return {
     statusCode: response.status,
     data: response.data,

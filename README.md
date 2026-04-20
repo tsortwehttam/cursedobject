@@ -303,13 +303,13 @@ Person:
     look_at:
       when: "{{ hasType($actor, 'Person') }}"
       action: |
-        convey($public_traits, $actor)
+        convey($self, ["hair_color", "wearing_shirt"], $actor)
   anchors:
     left_hand:
-      holds: 1
+      capacity: 1
       accepts: [Item]
     right_hand:
-      holds: 1
+      capacity: 1
       accepts: [Item]
 
 Bob:
@@ -326,7 +326,7 @@ Bob:
       super: true
       action: |
         {{#if wearing_shirt === false}}
-          convey("Bob has a heart tattoo on his left bicep", $actor)
+          convey($self, ["tattoo.shape", "tattoo.location"], $actor)
         {{#end}}
     tear_off_shirt:
       when: "{{ hasType($actor, 'Person') && within($actor, $self, 2.0) }}"
@@ -599,17 +599,14 @@ Facsimile should borrow from existing work where it helps, especially around:
 
 Good prior art may come from games, simulation frameworks, narrative tools, AI agent systems, and world editors. The goal is not novelty for its own sake. The goal is a tight model that works.
 
-## Immediate Spec Questions
+## Immediate Implementation Work
 
-These are the main unresolved questions that should shape implementation next:
+The core v1 decisions are now narrow enough to implement against. The first runtime slice covers exported types, Zod schemas, and the worked event-run example. Next implementation work should broaden that slice:
 
-- Inheritance and `super: true` semantics: handler body merging vs chaining, trait override order under multi-inheritance, diamond resolution.
-- Handler precondition vocabulary: fixed set (`accepts`, `within`, `after`) vs open-ended `when:` predicate reading committed state.
-- Event refusal when preconditions fail: silent drop, `refused` event, or error effect?
-- Cascade and reentrancy for ordinary events: depth limit, termination guarantees, event log shape across cascades.
-- Ongoing operations and their observation surface: how does `{{...}}` see progress and status of long-running `<<...>>` operations? Engine-managed `ongoing` map on `EntityState`, or author-modeled traits?
-- Effect ordering and conflict resolution when multiple effects write to the same trait in one commit.
-- Time, ticks, and scheduling: engine clock adapter, tick events, delayed effects.
+- Implement full handler inheritance chaining.
+- Expand the script action parser beyond simple helper-call lines.
+- Implement the typed query API and query-backed stdlib helpers.
+- Add adapter-backed `<<...>>` directives for AI and navigation.
 
 ## Implementation Direction
 

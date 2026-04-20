@@ -24,6 +24,9 @@ type TraitValue = SerialValue;
 type HandlerName = string;
 type AnchorName = string;
 type EventId = string;
+type RunId = string;
+type OpId = string;
+type ScheduledId = string;
 ```
 
 ## Entity Model
@@ -43,8 +46,8 @@ type EntityDef = {
     public: Record<string, TraitValue>;
     private: Record<string, TraitValue>;
   };
-  handlers: Record<HandlerName, HandlerDef>;
-  anchors: Record<AnchorName, AnchorDef>;
+  handlers: Record<HandlerName, HandlerDefInput>;
+  anchors: Record<AnchorName, AnchorDefInput>;
   transform: TransformDef | null;
   tags: string[];
 };
@@ -109,6 +112,7 @@ type EntityState = {
   transform: TransformState | null;
   anchorState: Record<AnchorName, AnchorState>;
   status: Record<string, TraitValue>;
+  ops: Record<OpId, OpState>;
 };
 ```
 
@@ -118,23 +122,56 @@ Notes:
 - `anchorState` stores occupancy and attachment relationships.
 - `status` is for transient runtime-only state like cooldowns, temporary modes, or ephemeral flags.
 - `status` exists to keep long-lived authored traits from becoming a junk drawer for execution state.
+- `ops` is for engine-managed ongoing operations such as navigation. Authors can read it through pure helpers, but should not author it directly.
+
+### `OpState`
+
+`OpState` exposes the minimum committed surface for long-running adapter-backed work.
+
+```ts
+type OpState = {
+  id: OpId;
+  kind: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  target: EntityId | null;
+  progress: number;
+  startedAt: number;
+  updatedAt: number;
+  endedAt: number | null;
+  error: string | null;
+};
+```
+
+Notes:
+
+- `progress` is always clamped to `0..1`.
+- Completed, failed, and cancelled ops remain queryable until an author or host removes them.
+- Adapter-specific details belong in adapter-owned state, not in `OpState`.
 
 ### `WorldState`
 
 ```ts
 type WorldState = {
+  revision: number;
+  clock: number;
   defs: Record<EntityId, EntityDef>;
   state: Record<EntityId, EntityState>;
   knowledge: KnowledgeIndex;
   events: EventRecord[];
+  scheduled: ScheduledEvent[];
+  runs: Record<RunId, RunState>;
 };
 ```
 
 Notes:
 
 - `defs` and `state` are intentionally separate.
+- `revision` increments once per committed event.
+- `clock` is the engine time used for event timestamps and scheduling.
 - `knowledge` is global storage of observer-owned knowledge records.
 - `events` is the immutable event log.
+- `scheduled` stores delayed events that are not due yet.
+- `runs` stores active event runs and can be omitted from durable snapshots once idle.
 
 ## Traits
 
@@ -279,7 +316,7 @@ type HandlerContext = {
 type HandlerResult = {
   ok: boolean;
   effects: Effect[];
-  emits: EventRecord[];
+  emits: EventInput[];
 };
 ```
 
@@ -292,6 +329,10 @@ type Effect =
   | { type: "attach"; parent: EntityId; anchor: AnchorName; child: EntityId }
   | { type: "detach"; parent: EntityId; anchor: AnchorName; child: EntityId }
   | { type: "move"; entity: EntityId; to: string }
+  | { type: "start_op"; entity: EntityId; op: OpState }
+  | { type: "update_op"; entity: EntityId; op: OpId; patch: Partial<OpState> }
+  | { type: "cancel_op"; entity: EntityId; op: OpId }
+  | { type: "schedule_event"; event: EventInput; delay: number }
   | { type: "ai"; request: AIRequest }
   | { type: "nav"; request: NavRequest };
 ```
@@ -301,7 +342,24 @@ Notes:
 - handlers return intended state transitions as effects
 - the engine validates and applies them in deterministic order
 - `learn` is an explicit effect, not an implicit side effect of reading traits
+- `start_op`, `update_op`, and `cancel_op` are engine-owned effects used to expose long-running adapter work in committed state
+- `schedule_event` is the v1 delayed-action primitive; hosts advance engine time, and due events enter the normal queue
 - adapter-backed work (AI, nav, line-of-sight, future I/O) is represented internally as engine-managed effects and resolved through the corresponding adapter
+
+### Effect ordering and conflict
+
+Effects are applied in stable insertion order after a handler finishes resolving.
+
+If multiple effects write the same final slot in one event commit, the later effect wins. This is deliberately simple and matches normal script order. There is no v1 priority system.
+
+For conflict purposes, these are final slots:
+
+- one trait path on one entity
+- one knowledge record keyed by `holder + subject + path`
+- one anchor occupancy record
+- one op record
+
+The engine should validate every effect before applying the commit. If any effect is invalid, the event fails and none of its effects are committed.
 
 ### Execution flow
 
@@ -311,8 +369,10 @@ The minimum useful execution flow is:
 2. resolve a matching handler
 3. evaluate whether the handler can run
 4. produce effects and follow-up events
-5. let the engine apply effects
-6. append resulting events to the log
+5. resolve adapter-backed effects
+6. validate the full effect list
+7. commit effects and append the event to the log
+8. enqueue perception fanout and follow-up events
 
 This keeps replay, testing, debugging, and async integration much cleaner than direct mutation.
 
@@ -360,6 +420,125 @@ waitForEvent(eventId) -> Promise<void>
 waitForIdle() -> Promise<void>
 ```
 
+### `EventInput`
+
+`EventInput` is the caller- and author-facing event shape. The engine assigns id, run, and parent before handler execution, then assigns timestamp when it commits the event.
+
+```ts
+type EventInput = {
+  type: string;
+  actor: EntityId | null;
+  target: EntityId | null;
+  body: SerialValue;
+  observers: EntityId[] | null;
+};
+```
+
+### `ApplyResult`
+
+`applyEvent` resolves to a result object instead of throwing for normal event failure.
+
+```ts
+type ApplyError = {
+  code:
+    | "cascade_limit"
+    | "script_error"
+    | "adapter_error"
+    | "validation_error";
+  message: string;
+  event: EventId | null;
+};
+```
+
+```ts
+type ApplyResult =
+  | {
+      ok: true;
+      run: RunState;
+      committed: EventRecord[];
+      world: WorldState;
+    }
+  | {
+      ok: false;
+      run: RunState;
+      committed: EventRecord[];
+      error: ApplyError;
+      world: WorldState;
+    };
+```
+
+`committed` includes every event committed during the run before success or failure.
+
+### Event runs, cascade, and reentrancy
+
+Each external `applyEvent` starts an event run. A run owns a FIFO queue of events and processes one event at a time.
+
+```ts
+type RunState = {
+  id: RunId;
+  status: "running" | "done" | "failed";
+  root: EventId;
+  queue: EventInput[];
+  processed: EventId[];
+  error: string | null;
+};
+```
+
+```ts
+type ScheduledEvent = {
+  id: ScheduledId;
+  dueAt: number;
+  event: EventInput;
+  parent: EventId | null;
+};
+```
+
+Rules:
+
+- handlers cannot call `applyEvent` directly
+- handlers can only return effects and follow-up events
+- follow-up events are appended to the current run queue
+- the engine processes the queue until empty, failed, or stopped by a configured event limit
+- the default maximum is `1000` committed events per run
+- exceeding the limit fails the run before processing the next event
+
+Each event commits independently. A later failure does not roll back prior committed events in the same run.
+
+This gives v1 enough cascade support for ordinary authored consequences without introducing nested transactions or recursive event dispatch.
+
+### Cascade log shape
+
+Events are appended in the exact order they commit.
+
+```ts
+type EventRecord = {
+  id: EventId;
+  run: RunId;
+  parent: EventId | null;
+  type: string;
+  actor: EntityId | null;
+  target: EntityId | null;
+  body: SerialValue;
+  at: number;
+  observers: EntityId[] | null;
+};
+```
+
+- `run` groups all events caused by one external input.
+- `parent` points to the event that emitted or fanned out this event.
+- externally submitted events have `parent: null`.
+- synthetic perceive events use the perceived event as `parent`.
+- handler-emitted events use the currently processed event as `parent`.
+
+### Queue order
+
+After an event commits, the engine enqueues:
+
+1. synthetic perceive events for that event, sorted by observer id
+2. handler-emitted follow-up events, in author order
+
+Perceive events never generate their own perceive fanout, but their handlers may emit ordinary follow-up events.
+
 ### Committed state
 
 The engine should distinguish between in-flight event work and committed world state.
@@ -368,6 +547,35 @@ The engine should distinguish between in-flight event work and committed world s
 - pending async work is not partially visible by default
 - completed events advance the committed world revision
 - callers may choose between reading the current committed world immediately or waiting for pending event work to settle
+- a single event commit is atomic
+- a multi-event run is not atomic
+
+### Long-running operations
+
+Long-running adapter work, such as `<<#navigate>>`, commits an `OpState` through `EntityState.ops`.
+
+The event that starts the operation commits once the adapter has accepted the operation and returned an op id. The operation's progress is not part of that original event. Progress is exposed by later committed `update_op` effects, usually from ticks or host adapter callbacks.
+
+Authored code reads operation state through pure helpers such as:
+
+```ts
+isRunning(entity, kind) -> boolean
+opProgress(entity, kind) -> number | null
+```
+
+Authors should not model engine operation state as normal traits in v1. Traits can still mirror operation state when game fiction needs it, such as `mood.impatient` or `pose.walking`.
+
+### Commit staging
+
+V1 uses atomic commit-on-settle for each event. There are no staged or streaming event commits.
+
+Long-running behavior is modeled as multiple ordinary events or op updates:
+
+1. one event starts the operation and commits an `OpState`
+2. later ticks or adapter callbacks update progress
+3. a final update marks the operation `done`, `failed`, or `cancelled`
+
+This keeps queries simple: they always read committed state.
 
 ### Async boundary
 
@@ -388,6 +596,77 @@ That keeps the important invariant intact:
 - event execution may suspend
 - world reads remain immediate against committed state
 - state commits remain centralized and inspectable
+
+### Time, ticks, and scheduling
+
+The engine owns a monotonic logical clock. Hosts may drive it from wall time, frames, turns, tests, or replay, but authored code sees only engine time.
+
+```ts
+type ClockAdapter = {
+  now() -> number;
+};
+```
+
+Rules:
+
+- `EventRecord.at` is assigned from the engine clock at commit time.
+- Timestamps are numbers; the default unit is milliseconds.
+- Tests and replay can supply a deterministic clock.
+- A `tick` is just an event, usually emitted by the host.
+- Ticks are not mandatory; turn-based games can advance time only when input events arrive.
+- Delayed actions are represented with `schedule_event` effects.
+
+Scheduled events are stored outside the event log until due. When due, they enter the normal run queue as ordinary events with `parent` set to the event that scheduled them if that parent is still known.
+
+### Failure modes
+
+V1 should fail fast and keep failure visible to callers.
+
+Script validation errors are load-time errors. The world should not start with invalid handlers.
+
+Runtime failures use this rule:
+
+- failed `when:` evaluation drops the handler silently, same as a false precondition
+- failed handler action evaluation fails the event
+- failed adapter calls fail the event
+- invalid AI structured output fails the event
+- failed effect validation fails the event
+
+When an event fails, none of its effects commit and the event is not appended as a successful `EventRecord`. The `ApplyResult` records the failure for the caller. Hosts may choose to emit a separate diagnostic event, but that is not v1 core behavior.
+
+Retries and provider fallback are adapter policy, not core event semantics. If an adapter retries internally and eventually returns a valid result, the event can succeed. If it returns failure, the event fails once. V1 has no author-facing fallback syntax for `<<...>>` directives.
+
+### Save and load
+
+V1 durable save/load is snapshot-based.
+
+A save file contains committed state only:
+
+- `revision`
+- `clock`
+- resolved entity definitions
+- entity state
+- knowledge
+- event log
+- scheduled events
+
+```ts
+type WorldSnapshot = {
+  revision: number;
+  clock: number;
+  defs: Record<EntityId, EntityDef>;
+  state: Record<EntityId, EntityState>;
+  knowledge: KnowledgeIndex;
+  events: EventRecord[];
+  scheduled: ScheduledEvent[];
+};
+```
+
+It does not contain in-flight handler continuations, pending adapter calls, or active run queues. Hosts should save only after `waitForIdle()` when they need exact continuation.
+
+Ongoing operations are saved only through committed `OpState`. On load, any `running` op is marked `failed` with an error indicating that it was interrupted by restore, unless a host-specific adapter explicitly resumes it.
+
+Replay from the event log is a debugging capability, not the v1 save format.
 
 ## Scripting Execution Model
 
@@ -470,6 +749,123 @@ AI-backed branching is not a separate construct. Authors bind a `#bool` or `#enu
 ```
 
 There is one way to do conditional dispatch over adapter-backed results.
+
+## Script Stdlib Surface
+
+The v1 script surface should be small and explicit. It has two categories:
+
+- pure helpers that can run inside `{{...}}` and `when:`
+- action helpers that can appear in handler bodies and lower to effects
+
+Pure helpers may read committed state and local bindings. They must not mutate state, enqueue events, call adapters, or suspend.
+
+Action helpers do not mutate state directly. They append declarative effects or follow-up events to the current handler result.
+
+### Pure world helpers
+
+```ts
+getTrait(entity, path) -> TraitValue | null
+hasTrait(entity, path) -> boolean
+hasType(entity, type) -> boolean
+hasTag(entity, tag) -> boolean
+isAttached(child, parent, anchor) -> boolean
+getChildren(parent, anchor) -> EntityId[]
+getParent(child) -> EntityId | null
+```
+
+Rules:
+
+- `entity` arguments accept an `EntityId` or an entity binding such as `$actor`.
+- missing values return `null` or `false`, not errors.
+- `getTrait` reads resolved runtime traits only; authored `public`/`private` categories do not change lookup syntax.
+- `anchor` may be `null` in helpers that accept an anchor filter.
+
+### Pure knowledge and perception helpers
+
+```ts
+canPerceive(observer, subject, path) -> boolean
+recall(holder, subject, path) -> KnowledgeRecord | null
+knows(holder, subject, path) -> boolean
+queryKnowledge(holder, filter) -> KnowledgeRecord[]
+```
+
+Rules:
+
+- `canPerceive` is a committed-state read. It does not call line-of-sight or nav adapters directly.
+- adapter-backed point checks use `<<#canSee ...>>` or `<<#pathTo ...>>`, not pure helpers.
+- `knows` is shorthand for `recall(...) !== null`.
+
+### Pure query and handler helpers
+
+```ts
+query(query) -> QueryResult
+queryIds(query) -> EntityId[]
+isHandlerAvailable(actor, target, name) -> boolean
+getAvailableHandlers(actor, target) -> HandlerName[]
+```
+
+Rules:
+
+- `query` uses the typed query model below.
+- `handler_available` checks dispatch and the handler's `when:` predicate against committed state.
+- checking handler availability must not run handler actions.
+
+### Pure spatial, time, and op helpers
+
+```ts
+within(entity, other, distance) -> boolean
+distanceTo(entity, other) -> number | null
+now() -> number
+getOp(entity, kind) -> OpState | null
+isRunning(entity, kind) -> boolean
+opProgress(entity, kind) -> number | null
+```
+
+Rules:
+
+- `within` and `distanceTo` read adapter-materialized committed state.
+- if a host has not materialized distance information, spatial helpers return `false` or `null`.
+- `now` returns the engine clock value, not wall-clock time.
+- `getOp(entity, kind)` returns the most recently updated op of that kind for the entity.
+
+### Action helpers
+
+```ts
+set(path, value) -> void
+setTrait(entity, path, value) -> void
+learn(holder, subject, path, value, via) -> void
+forget(holder, subject, path) -> void
+attach(parent, anchor, child) -> void
+detach(parent, anchor, child) -> void
+emit(event) -> void
+schedule(event, delay) -> void
+cancelOp(entity, op) -> void
+```
+
+Rules:
+
+- `set(path, value)` is shorthand for `setTrait($self, path, value)`.
+- `emit` appends a follow-up event to the current run.
+- `schedule` lowers to a `schedule_event` effect.
+- `cancelOp` lowers to `cancel_op`; adapter cancellation happens through the engine.
+- handler actions should use `<<#navigate ...>>`, `<<#canSee ...>>`, and `<<#pathTo ...>>` for nav adapter work.
+
+### Knowledge transfer helper
+
+`convey` is the v1 convenience helper for authored knowledge transfer.
+
+```ts
+convey(subject, paths, holder) -> void
+```
+
+It lowers to one `learn` effect per requested path. It does not automatically expose private traits; authors choose which paths to convey.
+
+Rules:
+
+- `subject` is the entity the facts are about.
+- `paths` is a path string or path array.
+- `holder` is the entity receiving the knowledge.
+- provenance uses the current event id when available.
 
 ## AI Resolution
 
@@ -707,14 +1103,14 @@ type NavAdapter = {
   canSee(observer: EntityId, subject: EntityId, world: WorldView) -> Promise<boolean> | boolean;
   pathTo(from: EntityId, to: EntityId, world: WorldView) -> Promise<NavPath | null> | NavPath | null;
   navigate(entity: EntityId, to: EntityId, world: WorldView) -> Promise<NavHandle>;
-  progress(handle: NavHandle, world: WorldView) -> number;
+  progress(handle: NavHandle, world: WorldView) -> Promise<number> | number;
   cancel(handle: NavHandle) -> void;
 };
 ```
 
 - `canSee` and `pathTo` are point queries. Adapters may answer synchronously or asynchronously; the engine treats them uniformly.
 - `navigate` starts an ongoing operation and returns a handle.
-- `progress` reads progress in `0..1` against committed state. It is sync because the adapter is expected to commit progress updates into world state as it ticks.
+- `progress` reads progress in `0..1`. The engine commits the result through `update_op`.
 - `cancel` aborts an ongoing op.
 
 ### `NavRequest`
@@ -737,11 +1133,11 @@ Nav is reached exclusively through `<<...>>` directives:
 <<#navigate $actor Bob>>
 ```
 
-Point-query results bind through the normal `binding :` mechanism. Ongoing operations are kicked off as fire-and-forget; the adapter writes status and progress into committed state, which `{{...}}` can then read synchronously.
+Point-query results bind through the normal `binding :` mechanism. Ongoing operations are kicked off as fire-and-forget; the engine writes status and progress into committed `OpState`, which `{{...}}` can then read synchronously through pure helpers.
 
 ### Determinism and replay
 
-Adapter results for point queries should be logged alongside the event that produced them so replay can reproduce handler outcomes without rerunning the host adapter. Ongoing operations replay through their committed state trail.
+Adapter results for point queries should be logged alongside the event that produced them so replay can reproduce handler outcomes without rerunning the host adapter. Ongoing operations replay through their committed `OpState` updates.
 
 ## Anchors
 
@@ -779,6 +1175,8 @@ Events are immutable records of what happened.
 ```ts
 type EventRecord = {
   id: EventId;
+  run: RunId;
+  parent: EventId | null;
   type: string;
   actor: EntityId | null;
   target: EntityId | null;
@@ -795,6 +1193,8 @@ The event log is used for:
 - recent-history queries
 - AI context assembly
 - deterministic testing
+
+`run` and `parent` are for cascade tracing. They do not affect dispatch.
 
 ### `observers`
 
@@ -841,19 +1241,368 @@ The body carries a pointer to the original event by id, not an inlined copy. Aut
 
 Perception modality is flat in v1. The event type plus the perception adapter together determine what "observing" means — hearers for `talk_to`, seers for `look_at`, and so on. Structured modality (`{ see: [...], hear: [...] }`) is not a v1 concern and can be added additively if it earns its keep.
 
-## Open Questions
+## Authoring Schemas
 
-The following remain unresolved and should stay in the README-level spec until answered:
+Authored YAML should validate before runtime construction. Zod is the v1 validation layer.
 
-- inheritance and `super: true` semantics: handler body merging vs chaining, trait override order under multi-inheritance, diamond resolution
-- handler precondition vocabulary: fixed set (`accepts`, `within`, `after`) vs open-ended `when:` predicate reading committed state
-- event refusal when preconditions fail: silent drop, `refused` event, or error effect?
-- cascade and reentrancy for ordinary events: cascade depth limit, termination guarantees, log shape
-- effect ordering when multiple effects in one commit target the same trait
-- ongoing operation state: is there an engine-managed `ongoing` map on `EntityState` exposing progress and handles, or do authors model this with traits?
-- time, ticks, and scheduling: clock adapter, tick events, delayed effects
-- save/load format, including treatment of in-flight events
-- failure modes for adapter calls and script evaluation: retry, skip, emit failure event?
+The minimum schema set is:
+
+```ts
+SerialValueSchema
+TraitBagSchema
+HandlerDefSchema
+AnchorDefSchema
+TransformDefSchema
+EntityDefSchema
+AuthoredWorldSchema
+EventInputSchema
+QuerySchema
+```
+
+### `AuthoredWorldSchema`
+
+The top-level authored world is a record of entity or prefab ids to entity definitions.
+
+```ts
+type AuthoredWorld = Record<EntityId, EntityDefInput>;
+```
+
+Rules:
+
+- keys are entity ids
+- the key is the default `id`; an explicit `id` field is not needed in YAML
+- ids beginning with `$` are reserved for system entities such as `$input` and `$camera`
+- duplicate ids are invalid after includes or generation
+
+### `EntityDefSchema`
+
+```ts
+type EntityDefInput = {
+  type: EntityType | null;
+  inherits: EntityType[];
+  traits: {
+    public: Record<TraitPath, TraitValue>;
+    private: Record<TraitPath, TraitValue>;
+  };
+  handlers: Record<HandlerName, HandlerDef>;
+  anchors: Record<AnchorName, AnchorDef>;
+  transform: TransformDef | null;
+  tags: string[];
+};
+```
+
+Defaults:
+
+- `type`: entity id
+- `inherits`: `[]`
+- `traits.public`: `{}`
+- `traits.private`: `{}`
+- `handlers`: `{}`
+- `anchors`: `{}`
+- `transform`: `null`
+- `tags`: `[]`
+
+Validation rules:
+
+- arrays default to empty arrays, not `null`
+- records default to empty objects
+- trait paths use `.` for nesting and must not contain `/`
+- handler names may contain `/` and must not contain `.`
+- inherited ids must resolve to authored definitions
+- inheritance cycles are invalid
+
+### `HandlerDefSchema`
+
+```ts
+type HandlerDefInput = {
+  when: string | null;
+  super: boolean;
+  action: string;
+};
+```
+
+Defaults:
+
+- `when`: `null`
+- `super`: `false`
+- `action`: `""`
+
+Validation rules:
+
+- `when`, when present, must be one `{{...}}` expression
+- `when` must validate against the pure helper surface only
+- `action` must parse as a handler body
+- handler bodies may contain `{{...}}` and `<<...>>` blocks
+- handler bodies must not reference host APIs directly
+
+### `AnchorDefSchema`
+
+```ts
+type AnchorDefInput = {
+  accepts: string[];
+  capacity: number;
+  offset: Vec3 | null;
+  rotation: Quat | null;
+};
+```
+
+Defaults:
+
+- `accepts`: `[]`
+- `capacity`: `1`
+- `offset`: `null`
+- `rotation`: `null`
+
+Validation rules:
+
+- `capacity` must be a positive integer
+- empty `accepts` means no type restriction
+
+### `EventInputSchema`
+
+```ts
+type EventInput = {
+  type: string;
+  actor: EntityId | null;
+  target: EntityId | null;
+  body: SerialValue;
+  observers: EntityId[] | null;
+};
+```
+
+Defaults:
+
+- `actor`: `null`
+- `target`: `null`
+- `body`: `null`
+- `observers`: `null`
+
+Validation rules:
+
+- event types may contain `/` and must not contain `.`
+- `actor`, `target`, and explicit `observers` must resolve before dispatch
+
+### Schema output
+
+Schema parsing produces normalized runtime input:
+
+- all defaults are filled
+- inherited definitions are not yet merged
+- trait bags remain split into `public` and `private`
+- ids are explicit on normalized `EntityDef`
+- invalid scripts fail before world construction
+
+## Worked Event Run
+
+This example shows one external input becoming a deterministic event run.
+
+### Authored world
+
+```yaml
+Person:
+  traits:
+    public:
+      can_see: true
+
+Alice:
+  inherits: [Person]
+
+Bob:
+  inherits: [Person]
+  traits:
+    public:
+      hair_color: blue
+  handlers:
+    look_at:
+      when: "{{ hasType($actor, 'Person') }}"
+      action: |
+        convey($self, "hair_color", $actor)
+
+Carol:
+  inherits: [Person]
+  handlers:
+    perceive/look_at:
+      action: |
+        learn($self, $event.actor, "looked_at", $event.body.of, { eventId: $event.id, actor: $event.actor, note: null })
+```
+
+### Input
+
+```ts
+const input: EventInput = {
+  type: "look_at",
+  actor: "Alice",
+  target: "Bob",
+  body: null,
+  observers: ["Carol"],
+};
+```
+
+Because `observers` is explicit, the engine does not derive perception from the adapter.
+
+### Run
+
+The engine creates a run:
+
+```ts
+{
+  id: "run_1",
+  status: "running",
+  root: "evt_1",
+  queue: [input],
+  processed: [],
+  error: null,
+}
+```
+
+### Event 1: `look_at`
+
+Dispatch:
+
+- target is `Bob`
+- handler is `Bob.look_at`
+- `when` evaluates true because `Alice` has type `Person`
+
+The handler emits one effect:
+
+```ts
+{
+  type: "learn",
+  holder: "Alice",
+  subject: "Bob",
+  path: "hair_color",
+  value: "blue",
+  via: { eventId: "evt_1", actor: "Alice", note: null },
+}
+```
+
+The engine validates the effect, commits it, appends `evt_1`, and increments `revision`.
+
+```ts
+{
+  id: "evt_1",
+  run: "run_1",
+  parent: null,
+  type: "look_at",
+  actor: "Alice",
+  target: "Bob",
+  body: null,
+  at: 1000,
+  observers: ["Carol"],
+}
+```
+
+After commit, the engine enqueues one perceive event for Carol:
+
+```ts
+{
+  type: "perceive/look_at",
+  actor: "Alice",
+  target: "Carol",
+  body: { of: "evt_1" },
+  observers: [],
+}
+```
+
+### Event 2: `perceive/look_at`
+
+Dispatch:
+
+- target is `Carol`
+- handler is `Carol.perceive/look_at`
+- perceive events do not fan out further
+
+The handler emits one effect:
+
+```ts
+{
+  type: "learn",
+  holder: "Carol",
+  subject: "Alice",
+  path: "looked_at",
+  value: "evt_1",
+  via: { eventId: "evt_2", actor: "Alice", note: null },
+}
+```
+
+The engine commits it and appends `evt_2`:
+
+```ts
+{
+  id: "evt_2",
+  run: "run_1",
+  parent: "evt_1",
+  type: "perceive/look_at",
+  actor: "Alice",
+  target: "Carol",
+  body: { of: "evt_1" },
+  at: 1001,
+  observers: [],
+}
+```
+
+### Final committed state
+
+The run ends when its queue is empty.
+
+```ts
+{
+  ok: true,
+  run: {
+    id: "run_1",
+    status: "done",
+    root: "evt_1",
+    queue: [],
+    processed: ["evt_1", "evt_2"],
+    error: null,
+  },
+  committed: ["evt_1", "evt_2"],
+}
+```
+
+Relevant knowledge now includes:
+
+```ts
+[
+  {
+    holder: "Alice",
+    subject: "Bob",
+    path: "hair_color",
+    value: "blue",
+  },
+  {
+    holder: "Carol",
+    subject: "Alice",
+    path: "looked_at",
+    value: "evt_1",
+  },
+]
+```
+
+The event log order is exactly the commit order:
+
+```ts
+["evt_1", "evt_2"]
+```
+
+This trace shows the v1 invariants:
+
+- dispatch is target-side
+- knowledge transfer is explicit
+- primary and perceive events commit separately
+- perceive events do not re-fan
+- `run` groups the cascade
+- `parent` records causality
+- queries during processing only see already committed revisions
+
+## Remaining Implementation Work
+
+The first runtime slice covers exported types, Zod schemas, and the worked event-run example. Remaining work should broaden that implementation:
+
+- implement full handler inheritance chaining
+- expand the script action parser beyond simple helper-call lines
+- implement the typed query API and query-backed stdlib helpers
+- add adapter-backed `<<...>>` directives for AI and navigation
 
 ## Query Model
 
