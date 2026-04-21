@@ -13,12 +13,7 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "baseUrl": ".",
     "types": ["node"],
-    "paths": {
-      "@/*": ["web/*"],
-      "@shared/*": ["shared/*"]
-    },
     "forceConsistentCasingInFileNames": true,
     "allowImportingTsExtensions": true
   },
