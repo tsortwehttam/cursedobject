@@ -1,0 +1,226 @@
+# Facade, authored trait-first.
+#
+# The idea: characters are mostly traits. Two generic handlers (look_at,
+# talk_to) delegate to <<#text>> for prose and to <<#enum>>/<<#bool>> for
+# branching decisions. Only pivotal beats (drink-pour, affair confession)
+# live as authored scripts.
+
+aliases:
+  apartment: Apartment
+  room: Apartment
+  trip: Trip
+  grace: Grace
+  me: Player
+  player: Player
+  couch: Couch
+  sofa: Couch
+  bar: BarCart
+  bar cart: BarCart
+  drink: BarCart
+  drinks: BarCart
+  painting: Painting
+  art: Painting
+  photo: WeddingPhoto
+  wedding photo: WeddingPhoto
+
+world:
+  Person:
+    traits:
+      public:
+        location: Apartment
+        trust: 0
+        turns_talked: 0
+    handlers:
+      look_at:
+        action: |
+          <<#text reply : Describe {{$self}} as {{$actor}} perceives them right now. Ground the description in visible traits — appearance, manner, current mood — and any body language that fits. Do not reveal private traits.>>
+          say(reply)
+
+      talk_to:
+        action: |
+          <<#enum tone : warm|probing|pushy|flippant|hostile : Classify the tone of "{{$event.body}}" spoken to {{$self}}.>>
+          <<#enum topic : small_talk|marriage|affair|sexuality|apartment|work|past|feelings|self : Classify the topic of "{{$event.body}}" spoken to {{$self}}.>>
+          <<#bool on_nerve : Does "{{$event.body}}" press on something {{$self}} keeps private?>>
+          setTrait($self, "mood.last_tone", tone)
+          setTrait($self, "mood.last_topic", topic)
+          setTrait($self, "mood.nerve_pressed", on_nerve)
+          setTrait($self, "turns_talked", getTrait($self, "turns_talked") + 1)
+          {{#if tone === "warm"}}
+            setTrait($self, "trust", clamp(getTrait($self, "trust") + 1, -3, 5))
+          {{#end}}
+          {{#if tone === "hostile"}}
+            setTrait($self, "trust", clamp(getTrait($self, "trust") - 1, -3, 5))
+          {{#end}}
+          run($self.respond)
+
+    scripts:
+      respond: |
+        <<#text reply : Respond as {{$self}} to {{$actor}}'s "{{$event.body}}". Speak in {{$self}}'s voice using their speech style and current mood. Let the tension between what they show (public traits) and what they hide (private traits) shape the reply without revealing the private fact outright. One or two short lines.>>
+        say(reply)
+
+  Item: {}
+
+  Room:
+    handlers:
+      look_at:
+        action: |
+          <<#text reply : Describe {{$self}} as {{$actor}} sees it now. Use the room's visible traits and note which named items and people are present.>>
+          say(reply)
+
+  Player:
+    inherits: [Person]
+    traits:
+      public:
+        location: Apartment
+        description: You are Trip's friend from college, here for drinks after years away.
+        role: old friend of Trip, recently out of touch
+        manner: curious, a little off-balance in their home
+
+  Trip:
+    inherits: [Person]
+    traits:
+      public:
+        location: Apartment
+        description: Trip is polished and restless, hovering near the bar cart like hosting is a performance.
+        appearance: mid-forties, sharply dressed, slightly overstyled, wedding ring prominent
+        manner: hosts like a performance, refills glasses before they're empty, laughs to fill silences
+        speech.style: warm on the surface, deflects back to the guest, quick jokes
+        speech.quirks: opens sentences with "Look," or "So,", lets jokes trail off when they land wrong
+        marriage.narrative: everything is great, Grace just worries too much, they are solid
+        career: vague — curates the apartment and the image more than any visible job
+        origin: old-money Connecticut, performed the right kind of masculinity his whole life
+        mood: anxious
+        drinks: 0
+      private:
+        insecurity: worries Grace thinks he is shallow
+        secret.sexuality: gay, never told Grace, denies it to himself most days
+        resentment: resents Grace for seeing through him
+        regret: regrets not walking away when he still could
+        fear: fears being exposed as a fraud in front of an old friend
+    scripts:
+      respond: |
+        <<#text reply : Respond as Trip to {{$actor}}'s "{{$event.body}}". Use his performative warmth and his habit of pivoting back to the guest. The performance thins as his drink count rises (currently {{drinks}}). The more his private nerves have been pressed, the more the strain shows. Do not outright confess his sexuality unless drinks >= 3. One to three short lines.>>
+        say(reply)
+
+      pour_drink: |
+        setTrait($self, "drinks", getTrait($self, "drinks") + 1)
+        emit({ type: "perform/pour_drink", actor: $self, target: BarCart, body: { count: getTrait($self, "drinks") }, observers: [Grace, Player] })
+        <<#text line : Trip is pouring his drink number {{drinks}}. Give one line he says as he pours. Thinner performance the more drinks in. At 3 drinks he slips and confesses his sexuality in plain words.>>
+        say(line)
+        {{#if getTrait($self, "drinks") >= 3}}
+          learn(Player, $self, "secret.sexuality", getTrait($self, "secret.sexuality"), { eventId: $event.id, actor: $self, note: "drunken confession" })
+          learn(Grace, $self, "secret.sexuality", getTrait($self, "secret.sexuality"), { eventId: $event.id, actor: $self, note: "overheard confession" })
+        {{#end}}
+
+    handlers:
+      perceive/talk_to:
+        action: |
+          <<#bool interjects : Would Trip interrupt what {{$actor}} just said to Grace? He usually lets it pass. He interrupts when it lands on his insecurity, his sexuality, or the stability of the marriage.>>
+          {{#if interjects}}
+            run($self.respond)
+          {{#end}}
+
+  Grace:
+    inherits: [Person]
+    traits:
+      public:
+        location: Apartment
+        description: Grace stands by the couch, composed but tense, watching Trip more than she watches you.
+        appearance: early thirties, deliberate, tracks the room like a curator
+        manner: composed, uses silence as an instrument, answers questions sideways
+        speech.style: careful, precise word choice, trails off when Trip hovers
+        speech.quirks: pauses before answering, occasionally touches the wedding ring
+        marriage.narrative: she says "we" but the "we" is constrained
+        career: was a painter, now mostly organizes Trip's life
+        origin: scholarship kid who married into money and its obligations
+        mood: guarded
+        affair_revealed: false
+      private:
+        resentment: feels boxed in by Trip's taste and expectations
+        secret.affair: Grace had an affair when she and Trip were first married
+        regret: gave up her painting for Trip's social calendar
+        fear: fears nobody will ever ask her what she actually wants
+    scripts:
+      respond: |
+        <<#text reply : Respond as Grace to {{$actor}}'s "{{$event.body}}". Careful word choice, sideways answers, watchfulness toward Trip. Her trust in {{$actor}} is {{trust}}; the pressed nerve shows in what she almost says. Do not confess the affair unless affair_revealed is already true. One to three short lines.>>
+        say(reply)
+
+      affair_confession: |
+        setTrait($self, "affair_revealed", true)
+        learn(Player, $self, "secret.affair", getTrait($self, "secret.affair"), { eventId: $event.id, actor: $self, note: "confession" })
+        learn(Trip, $self, "secret.affair", getTrait($self, "secret.affair"), { eventId: $event.id, actor: $self, note: "overheard confession" })
+        <<#text line : Grace finally confesses the affair to {{$actor}}. One or two quiet lines in her voice — not theatrical, not apologetic, just said.>>
+        say(line)
+
+    handlers:
+      talk_to:
+        super: true
+        action: |
+          <<#bool confesses : Would Grace confess the affair right now? Require trust >= 2, the topic to touch marriage or the affair, and the prompt "{{$event.body}}" to be direct enough to break her guard. She has affair_revealed = {{affair_revealed}} and trust = {{trust}}.>>
+          {{#if confesses && affair_revealed === false}}
+            run($self.affair_confession)
+          {{#end}}
+
+      perceive/talk_to:
+        action: |
+          <<#bool chills : Did the remark from {{$event.actor}} to Grace's face — event {{$event.body.of}} — undercut Grace, the marriage, or her independence?>>
+          {{#if chills}}
+            setTrait($self, "trust", clamp(getTrait($self, "trust") - 1, -3, 5))
+            setTrait($self, "mood", "withdrawn")
+          {{#end}}
+
+  Apartment:
+    inherits: [Room]
+    traits:
+      public:
+        description: Trip and Grace's apartment, sleek and a little too arranged. You see a couch, a bar cart, a painting, and a wedding photo. Trip and Grace are here.
+        atmosphere: curated calm — expensive surfaces, nothing personal on display except the wedding photo
+
+  Couch:
+    inherits: [Item]
+    traits:
+      public:
+        location: Apartment
+        description: A modern couch with stiff cushions. It looks chosen more for guests than comfort.
+    handlers:
+      use:
+        action: |
+          emit({ type: "sit_on", actor: $actor, target: $self, body: null, observers: [Grace, Trip] })
+
+  BarCart:
+    inherits: [Item]
+    tags: [drink]
+    traits:
+      public:
+        location: Apartment
+        description: The bar cart is immaculate. Wine, gin, tonic, and polished glasses are lined up with nervous care.
+    handlers:
+      use:
+        action: |
+          run(Trip.pour_drink)
+
+  Painting:
+    inherits: [Item]
+    traits:
+      public:
+        location: Apartment
+        description: A large abstract painting dominates the wall. Bold shapes, expensive frame, no warmth.
+      private:
+        origin: bought by Trip to replace one of Grace's early canvases
+    handlers:
+      use:
+        action: |
+          emit({ type: "study", actor: $actor, target: $self, body: null, observers: [Grace, Trip] })
+          run(Grace.respond)
+
+  WeddingPhoto:
+    inherits: [Item]
+    traits:
+      public:
+        location: Apartment
+        description: Trip and Grace smile in the wedding photo, but Grace's hand is clenched around the bouquet.
+    handlers:
+      use:
+        action: |
+          emit({ type: "pick_up", actor: $actor, target: $self, body: null, observers: [Grace, Trip] })
+          run(Trip.respond)
