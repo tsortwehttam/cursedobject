@@ -1,6 +1,4 @@
-
-
-
+/**
 // respond to events like this
 Trip sayto Grace "Hello" {
   // emit explicit events like this
@@ -66,28 +64,102 @@ $1 sayto $2 "ping" {
   $2 sayto $1 "pong"
 }
 
-$A say_to $B $C {
-  ai getresponse xyz123 $event
-}
-
 // device events ... TODO: need to align this better
-PLAYER keyboard/upArrow { ... }
-PLAYER keyboard/onKeyPress { ... }
-PLAYER form/onSubmit {}
+device keyboard/upArrow { ... }
+device keyboard/onKeyPress { ... }
+device form/onSubmit {}
 
-// system events ... TODO: enumerate these
-GAME boot {
-  //
+// game-level events ... TODO: enumerate these
+game boot {
+  // set up NPCs and setting here
 }
 
-// Grammar:
+// templated conditionals in body
+a b c {
+  {{#if foo > bar}}
+    something
+  {{#elsif foo <= baz}}
+    something else
+  {{#else}}
+    yet another thing
+  {{#end}}
+
+  {{#switch foo}}
+  {{#case abc}}
+    something
+  {{#case /meow/}}
+    something else
+  {{#default}}final default thing{{#end}}
+}
+
+// io adapter call with variable binding
+d e f {
+  <<#bool romantic = Does Jim feel romantic toward Sue?>> // how the heck do we pass in context here?
+  {{#if romantic}}
+    something
+  {{#end}}}
+}
+
+*/
+
+import { SerialObject, SerialValue } from "../lib/CoreTypings";
+
+type FacBaseEvent = {
+  actor: string;
+  verb: string;
+  target: string;
+  value: string;
+};
+
+type FacEvent = FacBaseEvent & {
+  obs: string[];
+};
+
+type FacEventHandlerSpec = FacBaseEvent & {
+  cond: string;
+  body: string;
+};
+
+type FacEntity = {
+  id: string;
+  data: Record<string, SerialValue>;
+};
+
+type FacAdapterMethod = (world: FacWorld, ...args: string[]) => Promise<SerialObject>;
+type FacAdapter = {
+  methods: Record<string, FacAdapterMethod>;
+};
+
+type FacWorld = {
+  entities: FacEntity[];
+};
+
+class Facsimile {
+  constructor(
+    public world: FacWorld,
+    public adapter: FacAdapter,
+    public handlers: FacEventHandlerSpec[],
+  ) {}
+
+  emit(event: FacEvent) {}
+}
+
+// big open question:
+// the << >> often implies that context is passed.
+// how do we specify that?
+/*
+first, how 
+
+*/
+
+// Grammar would be something like
 // BLOCK = HEADING { BODY }
 // EVENT_DESC = ACTOR VERB [TARGET [VALUE [if COND]]]
 // HEADING = EVENT_DESC
 // BODY = EVENT_DESC
 
 // These are representative of the kinds of games Facsimile is meant to enable:
-// 
+//
 // - `Jury Room`: You are in a jury room with 11 other jurors. Their personalities, biases, and the trial facts are rolled each run. You need to persuade the group toward one verdict or another.
 // - `Voir Dire`: A companion game to `Jury Room` where you interview generated jurors and decide who should sit on the jury, then carry that jury into the main game.
 // - `No Exit`: Three people in a room, mostly talking. The gameplay is psychological, philosophical, and relational rather than physical.
@@ -95,9 +167,9 @@ GAME boot {
 // - `Recruitment`: A dinner conversation where the other person may be a genuine defector, a plant, or an attempted recruiter. Information asymmetry is the core mechanic.
 // - `Sim Cult`: A compound management and social control game involving believers, rivals, infiltrators, and law enforcement pressure.
 // - `Trolls`: You are trapped with dangerous creatures and need to manipulate, charm, confuse, or outwit them through conversation.
-// 
+//
 // The through-line is that these games rely on:
-// 
+//
 // - social inference
 // - memory and knowledge
 // - physically situated interaction
@@ -107,12 +179,13 @@ GAME boot {
 /*
 - This file format should be a proper Peggy grammar.
 - Entities are just dumb objects with key value pairs.
-- Main thread can query all entities at any time and decide how to render, what to expose
+- Main thread can query all entities (with filters) at any time and decide how to render, what to expose
 - Engine simply receives events, and process them.
 - IO adapter is used for llm calls and anything else, so callers can bring their own implementation. Things that are IO:
   - Game save, load
   - LLM calls
   - Querying for line-of-sight visibility, entities actual spatial position, etc.
+  - May act as connector to system level events
 
 ## Design Goals
 
@@ -124,78 +197,24 @@ GAME boot {
 - Let the same world run with different renderers and input systems.
 - Prefer explicit data and composable primitives over special-case engine features.
 
-
-Probably do want to support syntax like this:
-  {{#if foo > bar}}
-    something
-  {{#elsif foo <= baz}}
-    something else
-  {{#else}}
-    yet another thing
-  {{#end}}
-
-    {{#switch foo}}
-  {{#case abc}} something
-  {{#case /meow/}} something else
-  {{#default}} final default thing
-  {{#end}}
-
 PLEASE NOTE we have some code in ScriptEvaluator.ts and TemplateHelpers.ts and TokenizerLexer.ts that can likely help rather than implementing from scratch.
 
-### `<< ... >>` interpolation
-
-`<< ... >>` is the suspension-world. Each block performs exactly one adapter-backed operation: an AI call, a nav query, a line-of-sight check, or any other engine-managed I/O. Every block takes a `#directive` prefix and may optionally bind its result.
-
-Grammar:
-
 ```
-<<# directive [binding :] body>>
-```
-
-Examples:
-
-```yaml
-foo: <<#text describe a scary looking place>>
-foo: <<#text name : the angriest character's name>>
-foo: <<#number Times Jim has said the word "the">>
-foo: <<#JSON roll a character with age, hair color, weight>>
-foo: <<#image:url Photoreal picture of cherry blossoms>>
-foo: <<#bool romantic : Does Jim feel romantic toward Sue?>>
-foo: <<#enum mood : happy|sad|angry : What mood is Bob in?>>
+<<#text describe a scary looking place>>
+<<#text name : the angriest character's name>>
+<<#number Times Jim has said the word "the">>
+<<#JSON roll a character with age, hair color, weight>>
+<<#image:url Photoreal picture of cherry blossoms>>
+<<#bool romantic : Does Jim feel romantic toward Sue?>>
+<<#enum mood : happy|sad|angry : What mood is Bob in?>>
 
 # nav and line-of-sight use the same machinery
-foo: <<#canSee visible : $actor Bob>>
-foo: <<#pathTo path : $actor Bob>>
-foo: <<#navigate $actor Bob>>
+<<#canSee visible : $actor Bob>>
+<<#pathTo path : $actor Bob>>
+<<#navigate $actor Bob>>
 
 # layered interpolation: {{...}} is resolved first and baked into the prompt
-foo: <<#text describe hot weather in {{10|12|20}} words>>
+<<#text describe hot weather in {{10|12|20}} words>>
 ```
 
-Rules:
-
-- Inside `<<...>>` there is no expression parser. Args are positional tokens; `$var` resolves against scope, bare identifiers are entity refs, remainder-of-body is the prompt for prose directives.
-- Without a `binding :`, prose directives emit their result at position; non-prose directives are fire-and-forget.
-- AI-backed branching is not a separate construct. Bind a `#bool` or `#enum` result, then branch in `{{...}}`.
-
-Example of branching on an AI classification:
-
-```yaml
-foo: |
-  <<#bool romantic : Does Jim feel romantic toward Sue?>>
-  {{#if romantic}}
-    something
-  {{#end}}
-
 */
-
-
-// event wire format:
-// {
-//   id: string
-//   actor: string
-//   verb: string
-//   target: string
-//   value: string (which may be a number or bool)
-//   obs: string[] (list of those who can observe)
-// }

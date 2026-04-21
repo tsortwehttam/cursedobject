@@ -2,7 +2,9 @@ export type ScalarValue = string | null | number | boolean;
 
 export type VectorValue = string[] | number[] | boolean[];
 
-export type SerialValue = ScalarValue | SerialValue[] | { [key: string]: SerialValue };
+export type SerialObject = { [key: string]: SerialValue };
+
+export type SerialValue = ScalarValue | SerialValue[] | SerialObject;
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -45,7 +47,7 @@ export function requireBoolean(obj: Record<string, unknown>, key: string): Resul
 export function requireLiteral<T extends string>(
   obj: Record<string, unknown>,
   key: string,
-  literal: T
+  literal: T,
 ): Result<T, string> {
   const val = obj[key];
   if (val !== literal) {
