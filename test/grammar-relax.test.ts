@@ -105,4 +105,41 @@ import { parse } from "../eng/Parser";
   assert.equal(program[0].body!.length, 1);
 }
 
+// Multi-line io payload with unquoted prose across lines
+{
+  const src = `
+Trip spawn {
+  <<#chat
+    as Trip ;
+    on * sayto Trip ;
+    You are Trip, a 30-something host.
+    You live in a polished apartment with Grace.
+    Backstory: moved to the city after college.
+  >>;
+}
+`;
+  const program = parse(src);
+  assert.equal(program.length, 1);
+  const stmt = program[0].body![0];
+  const io = stmt.slots[0];
+  assert.equal((io as any).t, "io");
+  assert.equal((io as any).kind, "chat");
+
+  // Raw payload preserves multi-line prose verbatim.
+  const raw = (io as any).raw as string;
+  assert.match(raw, /as Trip ;/);
+  assert.match(raw, /on \* sayto Trip ;/);
+  assert.match(raw, /Backstory: moved to the city after college\./);
+  assert.match(raw, /\n/, "raw should span lines");
+
+  // splitParams yields three trimmed clauses, no quoting needed.
+  const { splitParams } = require("../eng/Adapter");
+  const parts = splitParams(raw);
+  assert.equal(parts.length, 3, `expected 3 clauses, got ${parts.length}: ${JSON.stringify(parts)}`);
+  assert.equal(parts[0], "as Trip");
+  assert.equal(parts[1], "on * sayto Trip");
+  assert.match(parts[2], /^You are Trip/);
+  assert.match(parts[2], /moved to the city after college\.$/);
+}
+
 console.log("grammar-relax.test.ts OK");
