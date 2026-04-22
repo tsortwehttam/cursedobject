@@ -1,0 +1,26 @@
+{
+  "name": "facsimile-lang",
+  "displayName": "Facsimile Language",
+  "description": "Syntax highlighting for Facsimile .fac scripts.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "facsimile",
+        "aliases": ["Facsimile", "facsimile"],
+        "extensions": [".fac"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "facsimile",
+        "scopeName": "source.facsimile",
+        "path": "./syntaxes/facsimile.tmLanguage.json"
+      }
+    ]
+  }
+}

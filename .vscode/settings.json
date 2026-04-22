@@ -17,7 +17,8 @@
   "search.useIgnoreFiles": true,
   "search.useGlobalIgnoreFiles": false,
   "files.associations": {
-    "Makefile": "makefile"
+    "Makefile": "makefile",
+    "*.fac": "facsimile"
   },
   "files.exclude": {
     "**/.DS_Store": true

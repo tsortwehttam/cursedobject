@@ -1,0 +1,219 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Facsimile",
+  "scopeName": "source.facsimile",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#template-block" },
+    { "include": "#io-block" },
+    { "include": "#string" },
+    { "include": "#regex" },
+    { "include": "#number" },
+    { "include": "#wildcard" },
+    { "include": "#keyword" },
+    { "include": "#punctuation" },
+    { "include": "#ident" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.facsimile",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.facsimile",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+
+    "string": {
+      "name": "string.quoted.double.facsimile",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.facsimile",
+          "match": "\\\\."
+        },
+        { "include": "#interpolation" }
+      ]
+    },
+
+    "interpolation": {
+      "name": "meta.interpolation.facsimile",
+      "begin": "\\{\\{",
+      "beginCaptures": {
+        "0": { "name": "punctuation.section.interpolation.begin.facsimile" }
+      },
+      "end": "\\}\\}",
+      "endCaptures": {
+        "0": { "name": "punctuation.section.interpolation.end.facsimile" }
+      },
+      "patterns": [
+        {
+          "name": "keyword.operator.variation.facsimile",
+          "match": "\\|"
+        },
+        { "include": "#number" },
+        { "include": "#wildcard" },
+        { "include": "#ident-inside" }
+      ]
+    },
+
+    "regex": {
+      "name": "string.regexp.facsimile",
+      "begin": "(?<![A-Za-z0-9_/])/(?=[^/\\n]+/[gimsuy]*)",
+      "end": "/([gimsuy]*)",
+      "endCaptures": {
+        "1": { "name": "keyword.other.regex-flags.facsimile" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.facsimile",
+          "match": "\\\\."
+        }
+      ]
+    },
+
+    "number": {
+      "name": "constant.numeric.facsimile",
+      "match": "\\b-?[0-9]+(\\.[0-9]+)?\\b"
+    },
+
+    "wildcard": {
+      "name": "variable.parameter.wildcard.facsimile",
+      "match": "\\$[A-Za-z0-9_]+"
+    },
+
+    "keyword": {
+      "name": "keyword.control.conditional.facsimile",
+      "match": "\\bif\\b"
+    },
+
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.terminator.facsimile",
+          "match": ";"
+        },
+        {
+          "name": "punctuation.section.block.facsimile",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.accessor.facsimile",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.separator.params.facsimile",
+          "match": "::"
+        }
+      ]
+    },
+
+    "ident": {
+      "patterns": [
+        {
+          "name": "entity.name.type.facsimile",
+          "match": "\\b[A-Z][A-Za-z0-9_\\-/]*\\b"
+        },
+        {
+          "name": "variable.other.facsimile",
+          "match": "\\b[a-z_][A-Za-z0-9_\\-/]*\\b"
+        }
+      ]
+    },
+
+    "ident-inside": {
+      "patterns": [
+        {
+          "name": "entity.name.type.facsimile",
+          "match": "\\b[A-Z][A-Za-z0-9_\\-/]*\\b"
+        },
+        {
+          "name": "variable.other.facsimile",
+          "match": "\\b[a-z_][A-Za-z0-9_\\-/]*\\b"
+        }
+      ]
+    },
+
+    "template-block": {
+      "patterns": [
+        {
+          "name": "meta.template.if.facsimile",
+          "begin": "(\\{\\{#)(if|elsif)\\b",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.template.begin.facsimile" },
+            "2": { "name": "keyword.control.conditional.facsimile" }
+          },
+          "end": "\\}\\}",
+          "endCaptures": {
+            "0": { "name": "punctuation.section.template.end.facsimile" }
+          },
+          "patterns": [
+            { "include": "#number" },
+            { "include": "#wildcard" },
+            { "include": "#ident-inside" },
+            {
+              "name": "keyword.operator.facsimile",
+              "match": "[<>!=]=?|&&|\\|\\||\\+|-|\\*|/"
+            }
+          ]
+        },
+        {
+          "name": "meta.template.switch.facsimile",
+          "begin": "(\\{\\{#)(switch|case)\\b",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.template.begin.facsimile" },
+            "2": { "name": "keyword.control.switch.facsimile" }
+          },
+          "end": "\\}\\}",
+          "endCaptures": {
+            "0": { "name": "punctuation.section.template.end.facsimile" }
+          },
+          "patterns": [
+            { "include": "#regex" },
+            { "include": "#number" },
+            { "include": "#wildcard" },
+            { "include": "#ident-inside" }
+          ]
+        },
+        {
+          "name": "meta.template.marker.facsimile",
+          "match": "(\\{\\{#)(else|default|end)(\\}\\})",
+          "captures": {
+            "1": { "name": "punctuation.section.template.begin.facsimile" },
+            "2": { "name": "keyword.control.facsimile" },
+            "3": { "name": "punctuation.section.template.end.facsimile" }
+          }
+        }
+      ]
+    },
+
+    "io-block": {
+      "name": "meta.io.facsimile",
+      "begin": "(<<#)([A-Za-z_][A-Za-z0-9_\\-/]*)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.section.io.begin.facsimile" },
+        "2": { "name": "entity.name.function.io.facsimile" }
+      },
+      "end": ">>",
+      "endCaptures": {
+        "0": { "name": "punctuation.section.io.end.facsimile" }
+      },
+      "patterns": [
+        {
+          "name": "punctuation.separator.params.facsimile",
+          "match": "::"
+        },
+        { "include": "#interpolation" },
+        { "include": "#wildcard" },
+        { "include": "#number" },
+        { "include": "#ident-inside" }
+      ]
+    }
+  }
+}
