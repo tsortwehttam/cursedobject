@@ -142,4 +142,39 @@ Trip spawn {
   assert.match(parts[2], /moved to the city after college\.$/);
 }
 
+// with blocks prefix mutation paths, including nested paths
+{
+  const program = parse(`
+    Trip spawn {
+      with Trip {
+        name = "Trip"
+        with public {
+          mood = "brittle"
+        }
+      }
+    }
+  `);
+  const body = program[0].body!;
+  assert.equal(body.length, 2);
+  assert.deepEqual((body[0].slots[0] as any).segs.map((s: any) => s.v), ["Trip", "name"]);
+  assert.deepEqual((body[1].slots[0] as any).segs.map((s: any) => s.v), ["Trip", "public", "mood"]);
+}
+
+// top-level entity blocks become spawn handlers with an implicit with-prefix
+{
+  const program = parse(`
+    Trip {
+      name = "Trip"
+      with public {
+        mood = "brittle"
+      }
+    }
+  `);
+  assert.equal(program.length, 1);
+  assert.deepEqual(program[0].slots.map((slot: any) => slot.segs?.[0]?.v), ["Trip", "spawn"]);
+  const body = program[0].body!;
+  assert.deepEqual((body[0].slots[0] as any).segs.map((s: any) => s.v), ["Trip", "name"]);
+  assert.deepEqual((body[1].slots[0] as any).segs.map((s: any) => s.v), ["Trip", "public", "mood"]);
+}
+
 console.log("grammar-relax.test.ts OK");

@@ -1,5 +1,5 @@
 import peggy from "peggy";
-import type { FacProgram } from "./AST";
+import type { FacNode, FacProgram, RefSeg, Slot } from "./AST";
 
 const GRAMMAR = String.raw`
 {{
@@ -9,10 +9,12 @@ const GRAMMAR = String.raw`
   const N  = (v)    => ({ t: "num", v });
   const IO = (kind, raw) => ({ t: "io",   kind, raw: raw.trim() });
   const CO = (kind, raw) => ({ t: "cond", kind, raw: raw.trim() });
+  const withNode = (path, body) => ({ slots: [CO("with", path.segs.map((s) => s.wild ? "$" + s.v : s.v).join("."))], body });
+  const entityNode = (id, body) => ({ slots: [CO("entity", id.segs.map((s) => s.wild ? "$" + s.v : s.v).join("."))], body });
 }}
 
 Program
-  = _ nodes:Handler* _ { return nodes; }
+  = _ nodes:TopStmt* _ { return nodes; }
 
 Handler
   = slots:SlotList cond:Cond? body:Body
@@ -32,9 +34,22 @@ Terminator
   / !.
 
 Stmt
-  = IfBlock
+  = WithBlock
+  / IfBlock
   / SwitchBlock
   / Handler
+
+TopStmt
+  = EntityBlock
+  / Stmt
+
+EntityBlock
+  = id:EntityRef body:Body
+    { return entityNode(id, body ?? []); }
+
+WithBlock
+  = "with" WB __inl path:RefSlot body:Body
+    { return withNode(path, body ?? []); }
 
 Cond
   = __inl "if" WB __inl expr:RawUntilBrace { return expr.trim(); }
@@ -107,13 +122,23 @@ RefSlot
   = head:RefSeg tail:("." s:RefSeg { return s; })*
     { return R([head, ...tail]); }
 
+EntityRef
+  = !ReservedEntity head:PlainRefSeg tail:("." s:PlainRefSeg { return s; })*
+    { return R([head, ...tail]); }
+
 RefSeg
   = "$" v:WildName { return { wild: true,  v }; }
   / "*" !("*")    { return { wild: true,  v: "_" }; }
   / !Reserved v:Ident { return { wild: false, v }; }
 
+PlainRefSeg
+  = !Reserved v:Ident { return { wild: false, v }; }
+
 Reserved
   = ("if" / "{{#") WB
+
+ReservedEntity
+  = ("with" / "game" / "device" / "if" / "{{#") WB
 
 Ident "ident"
   = $([A-Za-z_][A-Za-z0-9_\-/]*)
@@ -176,5 +201,67 @@ export function parsePattern(pattern: string): import("./AST").FacNode {
 }
 
 export function parse(source: string): FacProgram {
-  return getParser().parse(source) as FacProgram;
+  return expandWithBlocks(getParser().parse(source) as FacProgram);
+}
+
+function expandWithBlocks(nodes: FacNode[], prefix: RefSeg[] = []): FacNode[] {
+  const out: FacNode[] = [];
+  for (const node of nodes) {
+    const head = node.slots[0];
+    if (head?.t === "cond" && head.kind === "entity") {
+      const path = pathToSegs(head.raw);
+      out.push({
+        slots: [refSlot(path), refSlot([{ wild: false, v: "spawn" }])],
+        body: expandWithBlocks(node.body ?? [], path),
+      });
+      continue;
+    }
+    if (head?.t === "cond" && head.kind === "with") {
+      out.push(...expandWithBlocks(node.body ?? [], [...prefix, ...pathToSegs(head.raw)]));
+      continue;
+    }
+    out.push(expandNode(node, prefix));
+  }
+  return out;
+}
+
+function expandNode(node: FacNode, prefix: RefSeg[]): FacNode {
+  if (prefix.length === 0) {
+    return {
+      ...node,
+      body: node.body ? expandWithBlocks(node.body) : node.body,
+    };
+  }
+  return {
+    ...node,
+    slots: prefixMutation(node.slots, prefix),
+    body: node.body ? expandWithBlocks(node.body, prefix) : node.body,
+  };
+}
+
+function prefixMutation(slots: Slot[], prefix: RefSeg[]): Slot[] {
+  if (!isMutation(slots)) return slots;
+  const head = slots[0];
+  if (head.t !== "ref") return slots;
+  return [{ ...head, segs: [...prefix, ...head.segs] }, ...slots.slice(1)];
+}
+
+function isMutation(slots: Slot[]): boolean {
+  if (slots.length < 2) return false;
+  const head = slots[0];
+  const verb = slots[1];
+  if (head.t !== "ref" || verb.t !== "ref") return false;
+  if (verb.segs.length !== 1 || verb.segs[0].wild) return false;
+  return verb.segs[0].v === "set" || verb.segs[0].v === "incr" || verb.segs[0].v === "decr";
+}
+
+function pathToSegs(path: string): RefSeg[] {
+  return path.split(".").filter(Boolean).map((v) => {
+    if (v.startsWith("$")) return { wild: true, v: v.slice(1) };
+    return { wild: false, v };
+  });
+}
+
+function refSlot(segs: RefSeg[]): Extract<Slot, { t: "ref" }> {
+  return { t: "ref", segs };
 }

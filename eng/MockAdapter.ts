@@ -19,7 +19,7 @@ export function createMockAdapter(responder: MockResponder): FacAdapter {
   }
 
   const methods: Record<string, typeof dispatch> = {};
-  for (const k of ["chat", "text", "bool", "number", "enum", "match", "JSON", "canSee", "pathTo"]) {
+  for (const k of ["chat", "text", "bool", "number", "enum", "match", "JSON", "canSee", "pathTo", "say", "narrate", "mark"]) {
     methods[k] = dispatch;
   }
   return { methods };
