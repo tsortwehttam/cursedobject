@@ -267,7 +267,7 @@ export function matchHandler(handler: FacNode, event: FacEvent): Env | null {
   return env;
 }
 
-function matchSlot(p: Slot, v: SerialValue, env: Env): boolean {
+export function matchSlot(p: Slot, v: SerialValue, env: Env): boolean {
   if (p.t === "str") return String(v) === p.v;
   if (p.t === "num") return Number(v) === p.v;
   if (p.t === "regex") return new RegExp(p.v, p.flags).test(String(v));

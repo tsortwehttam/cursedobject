@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { queryEvents, selectEvents } from "../eng/Query";
-import type { World } from "../eng/Engine";
+import { parse } from "../eng/Parser";
+import { matchAction, queryActions, queryEvents, selectEvents } from "../eng/Query";
+import { Facsimile, type World } from "../eng/Engine";
 
 const world: World = {
   entities: {},
@@ -92,4 +93,111 @@ const world: World = {
   assert.equal(r[0].env["$x"], "Trip");
 }
 
-console.log("query.test.ts OK");
+const query = {
+  actor: "John",
+  target: "Bill",
+  value: null,
+  obs: [],
+};
+
+// Partial inverse match binds actor and target wildcards and reads the literal verb.
+{
+  const [handler] = parse("$1 sayto $2 {}");
+  const r = matchAction(handler, query);
+  assert.ok(r);
+  assert.equal(r.verb, "sayto");
+  assert.equal(r.env["$1"], "John");
+  assert.equal(r.env["$2"], "Bill");
+  assert.equal(r.env["$actor"], "John");
+  assert.equal(r.env["$target"], "Bill");
+}
+
+// Bind consistency rejects handlers whose repeated wildcard cannot match the query.
+{
+  const [handler] = parse("$1 sayto $1 {}");
+  const r = matchAction(handler, query);
+  assert.equal(r, null);
+}
+
+// Non-literal verbs are not exposed as action names.
+{
+  const [handler] = parse("$1 /sayto|waveat/ $2 {}");
+  const r = matchAction(handler, query);
+  assert.equal(r, null);
+}
+
+async function runActionQueryTests() {
+  // queryActions evaluates handler conditions without emitting events.
+  {
+    const program = parse(`
+      $1 sayto $2 if John.energy > 0 {}
+      $1 waveat $2 if John.energy < 1 {}
+      $1 lookat $2 {}
+      $1 listen if has($obs, "Bill") {}
+      Trip sayto Grace {}
+      $1 give $2 $item if $item == "flower" {}
+    `);
+    const actionWorld: World = {
+      entities: {
+        John: { energy: 1 },
+        Bill: {},
+        Trip: {},
+        Grace: {},
+      },
+      events: [],
+    };
+    const engine = new Facsimile(actionWorld, { methods: {} }, program);
+
+    const r = await queryActions(engine, query);
+    assert.deepEqual(
+      r.map((m) => m.verb),
+      ["sayto", "lookat"],
+    );
+    assert.equal(actionWorld.events.length, 0);
+  }
+
+  // Query context can bind value slots and observations used by conditions.
+  {
+    const program = parse(`
+      $1 give $2 $item if $item == "flower" {}
+      $1 listen if has($obs, "Bill") {}
+    `);
+    const actionWorld: World = {
+      entities: { John: {}, Bill: {} },
+      events: [],
+    };
+    const engine = new Facsimile(actionWorld, { methods: {} }, program);
+
+    const r = await queryActions(engine, {
+      actor: "John",
+      target: "Bill",
+      value: "flower",
+      obs: ["Bill"],
+    });
+
+    assert.deepEqual(
+      r.map((m) => m.verb),
+      ["give"],
+    );
+    assert.equal(r[0].env["$item"], "flower");
+
+    const observed = await queryActions(engine, {
+      actor: "John",
+      target: null,
+      value: null,
+      obs: ["Bill"],
+    });
+
+    assert.deepEqual(
+      observed.map((m) => m.verb),
+      ["listen"],
+    );
+  }
+}
+
+runActionQueryTests()
+  .then(() => console.log("query.test.ts OK"))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

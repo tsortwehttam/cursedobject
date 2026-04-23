@@ -99,3 +99,26 @@ A main component of Facsimily is the query interface. Since Facsimile isn't conc
 - What they are doing
 
 The query API encompasses entities as well as events that have been emitted (the full history).
+
+Facsimile can also query handlers as capabilities without emitting an event. `queryActions(engine, query)` scans the loaded program, partially binds the actor, target, value, and observations into handler slots, evaluates handler conditions, and returns the matching literal verbs plus their bindings.
+
+For example, a handler like:
+
+```fac
+$1 sayto $2 if John.energy > 0 {
+  ...
+}
+```
+
+can be queried with:
+
+```ts
+await queryActions(engine, {
+  actor: "John",
+  target: "Bill",
+  value: null,
+  obs: [],
+});
+```
+
+If the condition passes, the result includes `sayto`. The query is read-only and does not append to `world.events`.
