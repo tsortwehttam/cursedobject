@@ -200,7 +200,7 @@ export class Facsimile {
         kind: s.kind,
         rawText: s.raw,
         interpolate: (text: string) => this.interpolate(text, env),
-        evalExpr: (expr: string) => this.evalExpr(expr, env),
+        evalExpr: (expr: string, extra: Env | null) => this.evalExpr(expr, extra ? { ...env, ...extra } : env),
       };
       const result = await method(ctx);
       this.log.push({ kind: "io", msg: `<<#${s.kind} ...>> → ${JSON.stringify(result)}` });

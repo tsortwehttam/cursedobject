@@ -122,3 +122,16 @@ await queryActions(engine, {
 ```
 
 If the condition passes, the result includes `sayto`. The query is read-only and does not append to `world.events`.
+
+Prompt directives can also include entity-scoped context with `with` clauses. These are useful for giving an adapter a structured view of nearby or relevant world state:
+
+```fac
+<<#chat
+  as John ;
+  on * sayto John ;
+  with public.*, clothing.* where location == LivingRoom ;
+  Respond in character.
+>>
+```
+
+`with` patterns are relative to each entity. The optional `where` expression is also evaluated against each entity, with the entity's properties, `$id`, and entity ids in scope. Matching fields are added to prompt state under `entities`, keyed by entity id.

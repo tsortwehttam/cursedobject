@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { NonEmpty, SerialValue } from "../lib/CoreTypings";
 import type { FacAdapter, IOCtx, IOMethod } from "./Adapter";
-import { collectContext, nonContextParts, splitParams } from "./Adapter";
+import { collectContext, collectEntityContext, nonContextParts, splitParams } from "./Adapter";
 import { parseClauses } from "./Clauses";
 import { selectEvents } from "./Query";
 import { resolveWildcardPath, wildcardMatchesToMap } from "../lib/WildcardPath";
@@ -35,16 +35,19 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
     return generateJson(openai, [{ role: "user", content: prompt }], schema, models, "openrouter");
   }
 
-  function buildPrompt(parts: string[], ctx: IOCtx, preface: string): string {
+  async function buildPrompt(parts: string[], ctx: IOCtx, preface: string): Promise<string> {
     const nonCtx = nonContextParts(parts).map((p) => ctx.interpolate(p));
-    const context = collectContext(parts, ctx.world);
+    const context = {
+      ...collectContext(parts, ctx.world),
+      ...(await collectEntityContext(parts, ctx)),
+    };
     const ctxBlock = Object.keys(context).length
       ? `\n\nContext:\n${JSON.stringify(context, null, 2)}`
       : "";
     return `${preface}\n\n${nonCtx.join("\n\n")}${ctxBlock}`.trim();
   }
 
-  const CHAT_TAGS = new Set(["as", "on", "context", "recent", "system"]);
+  const CHAT_TAGS = new Set(["as", "on", "context", "with", "recent", "system"]);
 
   const chat: IOMethod = async (ctx) => {
     const parts = splitParams(ctx.rawText);
@@ -55,6 +58,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
     const recentC = clauses.find((c) => c.tag === "recent");
     const systemC = clauses.find((c) => c.tag === "system");
     const contextCs = clauses.filter((c) => c.tag === "context");
+    const withCs = clauses.filter((c) => c.tag === "with");
     const promptPieces = clauses.filter((c) => c.tag === null).map((c) => ctx.interpolate(c.payload));
 
     // `as Trip` → include Trip.* as context automatically.
@@ -66,6 +70,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
     for (const c of contextCs) {
       Object.assign(scope, wildcardMatchesToMap(resolveWildcardPath(ctx.world.entities, c.payload)));
     }
+    Object.assign(scope, await collectEntityContext(withCs.map((c) => `with ${c.payload}`), ctx));
 
     // `on <pattern>` → filter event history.
     let history = onC ? selectEvents(ctx.world, onC.payload) : [];
@@ -95,7 +100,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
     const parts = splitParams(ctx.rawText);
     const [name, ...rest] = parts;
     if (!name) throw new Error("<<#text>> requires binding name");
-    const prompt = buildPrompt(rest, ctx, "Generate a concise piece of text for the following:");
+    const prompt = await buildPrompt(rest, ctx, "Generate a concise piece of text for the following:");
     const v = await callText(prompt);
     ctx.env[name] = v;
     return v;
@@ -105,7 +110,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
     const parts = splitParams(ctx.rawText);
     const [name, ...rest] = parts;
     if (!name) throw new Error("<<#bool>> requires binding name");
-    const prompt = buildPrompt(rest, ctx, "Answer strictly true or false.");
+    const prompt = await buildPrompt(rest, ctx, "Answer strictly true or false.");
     const r = await callJson(prompt, { type: "object", properties: { value: { type: "boolean" } }, required: ["value"] });
     const v = !!r.value;
     ctx.env[name] = v;
@@ -116,7 +121,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
     const parts = splitParams(ctx.rawText);
     const [name, ...rest] = parts;
     if (!name) throw new Error("<<#number>> requires binding name");
-    const prompt = buildPrompt(rest, ctx, "Return a single numeric value.");
+    const prompt = await buildPrompt(rest, ctx, "Return a single numeric value.");
     const r = await callJson(prompt, { type: "object", properties: { value: { type: "number" } }, required: ["value"] });
     const v = Number(r.value);
     ctx.env[name] = v;
@@ -128,7 +133,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
     const [name, optsStr, ...rest] = parts;
     if (!name || !optsStr) throw new Error("<<#enum>> requires name and options");
     const choices = optsStr.split("|").map((s) => s.trim());
-    const prompt = buildPrompt(rest, ctx, `Pick exactly one of: ${choices.join(", ")}.`);
+    const prompt = await buildPrompt(rest, ctx, `Pick exactly one of: ${choices.join(", ")}.`);
     const r = await callJson(prompt, {
       type: "object",
       properties: { value: { type: "string", enum: choices } },
@@ -150,7 +155,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
 
   const JSONMethod: IOMethod = async (ctx) => {
     const parts = splitParams(ctx.rawText);
-    const prompt = buildPrompt(parts, ctx, "Return a JSON object matching the description.");
+    const prompt = await buildPrompt(parts, ctx, "Return a JSON object matching the description.");
     const r = await callJson(prompt, { type: "object" });
     return r as SerialValue;
   };

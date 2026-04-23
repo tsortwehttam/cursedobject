@@ -1,5 +1,6 @@
-import { SerialValue } from "../lib/CoreTypings";
+import type { SerialValue } from "../lib/CoreTypings";
 import type { Env, World } from "./Engine";
+import { deepSet } from "../lib/PathHelpers";
 import { parseContextClause } from "./Parsing";
 import { resolveWildcardPath, wildcardMatchesToMap } from "../lib/WildcardPath";
 import { marshallParams } from "../lib/ParamsMarshaller";
@@ -10,7 +11,7 @@ export type IOCtx = {
   kind: string;
   rawText: string;
   interpolate: (text: string) => string;
-  evalExpr: (expr: string) => Promise<SerialValue>;
+  evalExpr: (expr: string, env: Env | null) => Promise<SerialValue>;
 };
 
 export type IOMethod = (ctx: IOCtx) => Promise<SerialValue>;
@@ -43,7 +44,64 @@ export function collectContext(parts: string[], world: World): Record<string, Se
   return out;
 }
 
+export async function collectEntityContext(parts: string[], ctx: IOCtx): Promise<Record<string, SerialValue>> {
+  const entities: Record<string, SerialValue> = {};
+  const ids = getEntityIdEnv(ctx.world);
+  for (const part of parts) {
+    const clause = parseWithClause(part);
+    if (!clause) continue;
+    for (const id of Object.keys(ctx.world.entities)) {
+      const ent = ctx.world.entities[id];
+      const env: Env = { ...ids, ...ent, $id: id };
+      if (clause.cond && !(await ctx.evalExpr(clause.cond, env))) continue;
+      const view = projectEntity(ent, clause.patterns);
+      if (Object.keys(view).length > 0) entities[id] = view;
+    }
+  }
+  return Object.keys(entities).length > 0 ? { entities } : {};
+}
+
 // Drop context clauses, return remaining args.
 export function nonContextParts(parts: string[]): string[] {
-  return parts.filter((p) => parseContextClause(p) === null);
+  return parts.filter((p) => parseContextClause(p) === null && parseWithClause(p) === null);
+}
+
+export type WithClause = {
+  patterns: string[];
+  cond: string | null;
+};
+
+export function parseWithClause(part: string): WithClause | null {
+  const match = part.match(/^with\s+([\s\S]+)$/);
+  if (!match) return null;
+  const body = match[1].trim();
+  const where = body.match(/^([\s\S]*?)\s+where\s+([\s\S]+)$/);
+  const rawPatterns = (where ? where[1] : body).trim();
+  const patterns = rawPatterns
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (patterns.length === 0) return null;
+  return {
+    patterns,
+    cond: where ? where[2].trim() : null,
+  };
+}
+
+function projectEntity(ent: Record<string, SerialValue>, patterns: string[]): Record<string, SerialValue> {
+  const out: Record<string, SerialValue> = {};
+  for (const pattern of patterns) {
+    for (const match of resolveWildcardPath(ent, pattern)) {
+      deepSet(out, match.path, match.value);
+    }
+  }
+  return out;
+}
+
+function getEntityIdEnv(world: World): Env {
+  const out: Env = {};
+  for (const id of Object.keys(world.entities)) {
+    out[id] = id;
+  }
+  return out;
 }

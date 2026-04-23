@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { parseClauses, firstClause, clausesOf } from "../eng/Clauses";
 
-const TAGS = new Set(["as", "on", "context", "recent", "system"]);
+const TAGS = new Set(["as", "on", "context", "with", "recent", "system"]);
 
 // Tagged clause
 {
@@ -43,6 +43,12 @@ const TAGS = new Set(["as", "on", "context", "recent", "system"]);
 {
   const cs = parseClauses(["as"], TAGS);
   assert.deepEqual(cs, [{ tag: "as", payload: "" }]);
+}
+
+// Entity context clause
+{
+  const cs = parseClauses(["with public.*, clothing.* where location == \"LivingRoom\""], TAGS);
+  assert.deepEqual(cs, [{ tag: "with", payload: "public.*, clothing.* where location == \"LivingRoom\"" }]);
 }
 
 // Known tag must match whole leading word — `ask` ≠ `as`
