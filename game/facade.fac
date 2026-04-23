@@ -1,70 +1,16 @@
-// Facade-like 2-character game. Trip and Grace. Player is an observer-participant.
-// All dialog responses are AI-generated. Engine is agnostic.
-
-// ---- Lifecycle: set up entities via spawn ----
-
-Trip spawn {
-  Trip.name set "Trip";
-  Trip.description set "A charismatic, successful host who has built a polished life with Grace. Upbeat on the surface, brittle underneath.";
-  Trip.mood set "cheerful";
-  Trip.drinks set 0;
-  Trip.tension set 0;
-  Trip.jealousy set 0;
-}
-
-Grace spawn {
-  Grace.name set "Grace";
-  Grace.description set "A sharp, creative woman who feels increasingly alienated in her marriage. Warm but watchful.";
-  Grace.mood set "guarded";
-  Grace.selfEsteem set 5;
-  Grace.affection set 3;
-  Grace.tension set 0;
-}
-
-Player spawn {
-  Player.name set "Player";
-  Player.description set "An old friend visiting Trip and Grace's apartment for drinks.";
-}
-
-// ---- Dialog routing: anything said to Trip → AI-generated Trip response ----
-
-$1 sayto Trip $2 {
-  Trip sayto $1 <<#chat as Trip ; on * sayto Trip ; Respond in character as Trip to {{$1}}, who just said: "{{$2}}".>>;
-}
-
-$1 sayto Grace $2 {
-  Grace sayto $1 <<#chat as Grace ; on * sayto Grace ; Respond in character as Grace to {{$1}}, who just said: "{{$2}}".>>;
-}
-
-// ---- Observers react to emotional signal ----
-
-// If Player says something affectionate to Grace while Trip is present → jealousy
-$1 sayto Grace $2 if has($obs, "Trip") {
-  <<#bool isAffectionate ; Is this line romantic or affectionate toward Grace? "{{$2}}">>;
-  {{#if isAffectionate}}
-    Trip.jealousy incr;
-    Trip.tension incr;
-  {{#end}}
-}
-
-// Grace gains affection when Player shows warmth
-$1 sayto Grace $2 {
-  <<#enum warmth ; warm|neutral|hostile ; Classify the emotional tone: "{{$2}}">>;
-  {{#switch warmth}}
-    {{#case warm}}
-      Grace.affection incr;
-    {{#case hostile}}
-      Grace.affection decr;
-      Grace.tension incr;
-  {{#end}}
-}
-
-// Trip drinks: each drink raises tension
-Trip.drinks incr {
-  Trip.tension incr;
-}
-
-// Lifecycle: seed scene
-game boot {
-  Scene.round set 0;
-}
+// interrupt
+// move
+// approach
+// collide
+// look at
+// pick up
+// drop
+// use
+//   objects like drink wine, open doors, turn on stereo
+// give
+//   objects to Grace or Trip
+// hit
+// slap
+// push
+// hug
+// kiss

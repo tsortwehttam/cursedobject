@@ -37,6 +37,14 @@ See @README.md
   - README is for consumers of the project, not the developers of it
 - Docs should go under `docs/`, plans under `plans/`
 
+_Refactor, clean up, and reduce code sprawl:_ Always remember that the most elegant solution to a rpoblem may be _less_ code, not more. Stop and ask yourself, "Can we improve the system by consolidating, simplifying, or even deleting code, pathways, modules, and so on?" Often, the answer will be "yes." Simplifying code often has an incredible way to unlocks an elegant fix or more general abstraction improvement that adding more code would not. Before adding a new branching code path, a new module when many exist, consider if a single shared abstraction could better handle all the cases more elegantly.
+
+_Enforce shared contracts:_ Before you implement a function that feels "generic", check if an implementation already exists. After changes, review your work to seek out and eliminate duplicate code, reduce footprint, and prevent the divergence of features that ought to depend on the same types. Keep a single source of truth for shared assumptions. Consolidate code and avoid repetition.
+
+_Share runtime invariants across modules:_ Do this with constants, magic strings, policies, validations, subroutines, Zod types, and so on to avoid code drift. For example, suppose we're writing an LLM prompt with a desired output shape. The naive (bad) way would be to write literal JSON in the prompt, a one-off function to validate, and then a separate type signature. The smart (good) way would be to write a single Zod schema, use that to render the prompt's JSON, to validate the output, and also as a strong typing for the function itself.
+
+_Avoid premature concretization:_ LLMs and AI agents tend to overfit to the user's given examples by treating each variation mentioned as a separate concept, assuming that differences and suggestions enumerated in the prompt must imply differences in code structure and ontology are needed as well. This is often unnecessary and leads to obnoxious over-taxonomization, over-elaborated types, excessive branching, and code duplication. When you consider a request, identify invariants first and determine whether cases may actually share a common structure. Treat differences as data, not necessarily as new types or code paths. Only introduce new abstractions when behavior actually diverges, and justify each one. Collapse similar patterns into a single minimal representation, then try to express variation through data fields or parameters rather than structure.
+
 ## JavaScript & TypeScript
 
 - Prefer strong TypeScript everywhere - scripts, components, business logic, tooling
@@ -65,20 +73,6 @@ See @README.md
 - Each hook's file name should match the hook's exported name
 - Prefer idiomatic Tailwind as the CSS/styling solution
 
-### Try to Enforce Shared Contracts
+## Analysis & Question Answering
 
-Before you implement a function that feels "generic", check if an implementation already exists. For example, if you're changing some pricing logic, you should scan to see what utility code already exists for managing pricing, billing, etc. Then, after changes, review your work to seek out and eliminate duplicate code, streamline logic, reduce footprint, and prevent the divergence of features that ought to depend on the same types. Keep a single source of truth for shared assumptions, and try your best to consolidate code and avoid repetition.
-
-Always look for runtime invariants (constants, magic strings, policies, validations, subroutines) and find ways to share across modules to avoid code drift. For example, suppose we're writing an LLM prompt with a desired output shape which we then pass to a function. The naive (bad) way to do this would be to write literal JSON in the prompt, a one-off function to validate its shape, and then a separate type signature for the function. The smart (good) way would be to write a single Zod schema, use that to render the prompt's JSON, to validate the output, and to use as a strong signature of the function.
-
-### Consider whether the solution is LESS code
-
-Continually ask yourself: Can we improve the system by _consolidating_, _simplifying_, _reducing_, or even _deleting_ code, pathways, modules, etc? Often simplifying unlocks an elegant fix or improvement that adding modules would not.
-
-## Writing, Prose
-
-Write in the simplest way you can with no fluff. Avoid LLM-isms like "it's not X, it's Y".
-
-# Analysis & Question Answering
-
-When you answer questions or perform analysis of information, keep your responses short. Begin with a compact and direct response of under 50 lines. The human needs to understand the answer immediately without getting bogged down in details. After the main idea section, you may put details, add'l considerations, reframings, edge cases, ancillary discussion and so on. Do not repeat yourself. Do not rephrase the same information in multiple different ways. Use headings and lists sparingly.
+When you answer questions or perform analysis of information, keep your responses short. Respond terse like smart caveman. All technical substance stay. Only fluff die. ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift. Still active if unsure. Off only: "stop caveman". Drop: articles (a/an/the), filler (just/really/basically/actually/simply), pleasantries (sure/certainly/of course/happy to), hedging. Fragments OK. Short synonyms (big not extensive, fix not "implement a solution for"). Technical terms exact. Code blocks unchanged. Errors quoted exact. Pattern: `[thing] [action] [reason]. [next step].` Not: "Sure! I'd be happy to help you with that. The issue you're experiencing is likely caused by..." Yes: "Bug in auth middleware. Token expiry check use < not <=. Fix:" Drop caveman for: security warnings, irreversible action confirmations, multi-step sequences where fragment order risks misread, user asks to clarify or repeats question. Resume caveman speech after clear part done.

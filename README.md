@@ -1,5 +1,7 @@
 # Facsimile
 
+See also @AGENTS.md.
+
 Facsimile is a platform-agnostic, AI-native TypeScript engine for building interactive fiction, dynamic narratives, and social simulation games.
 
 The aim is to support games where language, memory, knowledge, physical context, and authored story structure all matter at the same time: something in the territory between _Façade_, _The Sims_, _Firewatch_, parser-based IF, and simulation-heavy narrative games.
@@ -97,41 +99,3 @@ A main component of Facsimily is the query interface. Since Facsimile isn't conc
 - What they are holding
 - How they look
 - What they are doing
-
-The query API encompasses entities as well as events that have been emitted (the full history).
-
-Facsimile can also query handlers as capabilities without emitting an event. `queryActions(engine, query)` scans the loaded program, partially binds the actor, target, value, and observations into handler slots, evaluates handler conditions, and returns the matching literal verbs plus their bindings.
-
-For example, a handler like:
-
-```fac
-$1 sayto $2 if John.energy > 0 {
-  ...
-}
-```
-
-can be queried with:
-
-```ts
-await queryActions(engine, {
-  actor: "John",
-  target: "Bill",
-  value: null,
-  obs: [],
-});
-```
-
-If the condition passes, the result includes `sayto`. The query is read-only and does not append to `world.events`.
-
-Prompt directives can also include entity-scoped context with `with` clauses. These are useful for giving an adapter a structured view of nearby or relevant world state:
-
-```fac
-<<#chat
-  as John ;
-  on * sayto John ;
-  with public.*, clothing.* where location == LivingRoom ;
-  Respond in character.
->>
-```
-
-`with` patterns are relative to each entity. The optional `where` expression is also evaluated against each entity, with the entity's properties, `$id`, and entity ids in scope. Matching fields are added to prompt state under `entities`, keyed by entity id.
