@@ -242,40 +242,26 @@ Player sayto Room $msg {
   Room respond "{{tone}}" "{{topic}}" "Room" "{{msg}}";
 }
 
-Player sayto Trip $msg {
-  <<enum tone ; warm|hostile|neutral ; Classify player attitude toward Trip: {{$msg}}>>;
+Player sayto $who $msg if $who == "Trip" || $who == "Grace" {
+  <<enum tone ; warm|hostile|neutral ; Classify player attitude toward {{$who}}: {{$msg}}>>;
   <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
   Player.intent.tone = "{{tone}}";
   Player.intent.topic = "{{topic}}";
   Scene.topic = "{{topic}}";
   {{#if tone == "warm"}}
-    Scene.affinity incr;
-    Trip.feelings.affection incr;
+    {{#if $who == "Trip"}}
+      Scene.affinity incr;
+    {{#else}}
+      Scene.affinity decr;
+    {{#end}}
+    $who.feelings.affection incr;
   {{#elsif tone == "hostile"}}
-    Trip.feelings.affection decr;
-    Trip.feelings.tension incr;
+    $who.feelings.affection decr;
+    $who.feelings.tension incr;
     Scene.tension incr;
   {{#end}}
   Room player-topic "{{topic}}";
-  Room respond "{{tone}}" "{{topic}}" "Trip" "{{msg}}";
-}
-
-Player sayto Grace $msg {
-  <<enum tone ; warm|hostile|neutral ; Classify player attitude toward Grace: {{$msg}}>>;
-  <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
-  Player.intent.tone = "{{tone}}";
-  Player.intent.topic = "{{topic}}";
-  Scene.topic = "{{topic}}";
-  {{#if tone == "warm"}}
-    Scene.affinity decr;
-    Grace.feelings.affection incr;
-  {{#elsif tone == "hostile"}}
-    Grace.feelings.affection decr;
-    Grace.feelings.tension incr;
-    Scene.tension incr;
-  {{#end}}
-  Room player-topic "{{topic}}";
-  Room respond "{{tone}}" "{{topic}}" "Grace" "{{msg}}";
+  Room respond "{{tone}}" "{{topic}}" "{{$who}}" "{{$msg}}";
 }
 
 Room player-tone "warm" {

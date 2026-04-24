@@ -84,6 +84,29 @@ const beforeAff = Number(engine.readPath(["Grace", "feelings", "affection"]) ?? 
 await engine.emit(engine.mkEvent(["Player", "sayto", "Grace", "You are stupid"]));
 assert.equal(Number(engine.readPath(["Grace", "feelings", "affection"])), beforeAff - 1);
 
+// Merged sayto handler: Scene.affinity is asymmetric by target on warm tone.
+// Warm→Trip should incr; warm→Grace should decr. Test both routes go through
+// the single consolidated `Player sayto $who $msg` handler.
+const affBeforeTrip = Number(engine.readPath(["Scene", "affinity"]) ?? 0);
+await engine.emit(engine.mkEvent(["Player", "sayto", "Trip", "Thanks, love being here"]));
+const affAfterTrip = Number(engine.readPath(["Scene", "affinity"]) ?? 0);
+assert.equal(affAfterTrip, affBeforeTrip + 1, "warm→Trip should incr Scene.affinity");
+
+const affBeforeGrace = affAfterTrip;
+await engine.emit(engine.mkEvent(["Player", "sayto", "Grace", "I love seeing you, beautiful"]));
+const affAfterGrace = Number(engine.readPath(["Scene", "affinity"]) ?? 0);
+assert.equal(affAfterGrace, affBeforeGrace - 1, "warm→Grace should decr Scene.affinity");
+
+// Dynamic `$who.feelings.*` path resolution: both targets got their own bumps.
+assert.ok(
+  Number(engine.readPath(["Trip", "feelings", "affection"]) ?? 0) > 0,
+  "Trip.feelings.affection should have risen via merged handler",
+);
+assert.ok(
+  Number(engine.readPath(["Grace", "feelings", "affection"]) ?? 0) > 0,
+  "Grace.feelings.affection should have risen via merged handler",
+);
+
 // Round 4: Trip drinks (verb "incr" on Trip.feelings.drunkenness) -> tension rises via property-change handler.
 const tensionBefore = Number(engine.readPath(["Trip", "feelings", "tension"]) ?? 0);
 await engine.emit(engine.mkEvent(["Trip.feelings.drunkenness", "incr"]));
