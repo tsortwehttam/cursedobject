@@ -30,14 +30,14 @@ import { parse } from "../eng/Parser";
   const program = parse(`
     Trip spawn {
       Trip.mood = "cheerful"
-      Trip.drinks = 0
-      Trip.tension = 0
+      Trip.feelings.drunkenness = 0
+      Trip.feelings.tension = 0
     }
   `);
   assert.equal(program.length, 1);
   assert.equal(program[0].body!.length, 3);
   assert.equal((program[0].body![0].slots[2] as any).v, "cheerful");
-  assert.equal((program[0].body![2].slots[0] as any).segs[1].v, "tension");
+  assert.equal((program[0].body![2].slots[0] as any).segs[2].v, "tension");
 }
 
 // Mixed newlines and semicolons
@@ -142,13 +142,13 @@ Trip spawn {
   assert.match(parts[2], /moved to the city after college\.$/);
 }
 
-// with blocks prefix mutation paths, including nested paths
+// scoped blocks prefix mutation paths, including nested paths
 {
   const program = parse(`
     Trip spawn {
       with Trip {
         name = "Trip"
-        with public {
+        traits {
           mood = "brittle"
         }
       }
@@ -157,7 +157,7 @@ Trip spawn {
   const body = program[0].body!;
   assert.equal(body.length, 2);
   assert.deepEqual((body[0].slots[0] as any).segs.map((s: any) => s.v), ["Trip", "name"]);
-  assert.deepEqual((body[1].slots[0] as any).segs.map((s: any) => s.v), ["Trip", "public", "mood"]);
+  assert.deepEqual((body[1].slots[0] as any).segs.map((s: any) => s.v), ["Trip", "traits", "mood"]);
 }
 
 // top-level entity blocks become spawn handlers with an implicit with-prefix
@@ -165,7 +165,7 @@ Trip spawn {
   const program = parse(`
     Trip {
       name = "Trip"
-      with public {
+      public {
         mood = "brittle"
       }
     }

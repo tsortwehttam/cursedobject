@@ -10,6 +10,7 @@ const GRAMMAR = String.raw`
   const IO = (kind, raw) => ({ t: "io",   kind, raw: raw.trim() });
   const CO = (kind, raw) => ({ t: "cond", kind, raw: raw.trim() });
   const withNode = (path, body) => ({ slots: [CO("with", path.segs.map((s) => s.wild ? "$" + s.v : s.v).join("."))], body });
+  const scopeNode = (path, body) => ({ slots: [CO("scope", path.segs.map((s) => s.wild ? "$" + s.v : s.v).join("."))], body });
   const entityNode = (id, body) => ({ slots: [CO("entity", id.segs.map((s) => s.wild ? "$" + s.v : s.v).join("."))], body });
 }}
 
@@ -24,8 +25,11 @@ SlotList
   = first:Slot rest:(__inl s:Slot { return s; })* { return [first, ...rest]; }
 
 Body
-  = _ "{" _ stmts:Stmt* "}" _ { return stmts; }
+  = BlockBody
   / _inl Terminator _         { return undefined; }
+
+BlockBody
+  = _ "{" _ stmts:Stmt* "}" _ { return stmts; }
 
 Terminator
   = ";"
@@ -35,6 +39,7 @@ Terminator
 
 Stmt
   = WithBlock
+  / ScopedBlock
   / IfBlock
   / SwitchBlock
   / Handler
@@ -50,6 +55,10 @@ EntityBlock
 WithBlock
   = "with" WB __inl path:RefSlot body:Body
     { return withNode(path, body ?? []); }
+
+ScopedBlock
+  = path:ScopedRef body:BlockBody
+    { return scopeNode(path, body); }
 
 Cond
   = __inl "if" WB __inl expr:RawUntilBrace { return expr.trim(); }
@@ -122,6 +131,10 @@ RefSlot
   = head:RefSeg tail:("." s:RefSeg { return s; })*
     { return R([head, ...tail]); }
 
+ScopedRef
+  = head:ScopedSeg tail:("." s:PlainRefSeg { return s; })*
+    { return R([head, ...tail]); }
+
 EntityRef
   = !ReservedEntity head:PlainRefSeg tail:("." s:PlainRefSeg { return s; })*
     { return R([head, ...tail]); }
@@ -134,6 +147,9 @@ RefSeg
 PlainRefSeg
   = !Reserved v:Ident { return { wild: false, v }; }
 
+ScopedSeg
+  = !Reserved v:ScopedIdent { return { wild: false, v }; }
+
 Reserved
   = ("if" / "{{#") WB
 
@@ -142,6 +158,9 @@ ReservedEntity
 
 Ident "ident"
   = $([A-Za-z_][A-Za-z0-9_\-/]*)
+
+ScopedIdent "scoped ident"
+  = $([a-z_][A-Za-z0-9_\-/]*)
 
 WildName
   = $([A-Za-z0-9_]+)
@@ -220,9 +239,28 @@ function expandWithBlocks(nodes: FacNode[], prefix: RefSeg[] = []): FacNode[] {
       out.push(...expandWithBlocks(node.body ?? [], [...prefix, ...pathToSegs(head.raw)]));
       continue;
     }
+    if (head?.t === "cond" && head.kind === "scope") {
+      const path = pathToSegs(head.raw);
+      if (isScopedAssignmentBlock(node.body ?? [])) {
+        out.push(...expandWithBlocks(node.body ?? [], [...prefix, ...path]));
+      } else {
+        out.push(expandNode({ ...node, slots: [refSlot(path)] }, prefix));
+      }
+      continue;
+    }
     out.push(expandNode(node, prefix));
   }
   return out;
+}
+
+function isScopedAssignmentBlock(nodes: FacNode[]): boolean {
+  return nodes.every((node) => {
+    const head = node.slots[0];
+    if (head?.t === "cond" && (head.kind === "with" || head.kind === "scope")) {
+      return isScopedAssignmentBlock(node.body ?? []);
+    }
+    return isMutation(node.slots);
+  });
 }
 
 function expandNode(node: FacNode, prefix: RefSeg[]): FacNode {

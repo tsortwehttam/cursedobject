@@ -23,7 +23,7 @@ assert.equal(parseContextClause("context"), null);
 assert.deepEqual(parseShorthandEvent('["Player","sayto","Trip","hi"]'), ["Player", "sayto", "Trip", "hi"]);
 assert.deepEqual(parseShorthandEvent("Player sayto Trip Hello Trip"), ["Player", "sayto", "Trip", "Hello Trip"]);
 assert.deepEqual(parseShorthandEvent('Player sayto Trip "quoted text"'), ["Player", "sayto", "Trip", "quoted text"]);
-assert.deepEqual(parseShorthandEvent("Trip.drinks incr"), ["Trip.drinks", "incr"]);
+assert.deepEqual(parseShorthandEvent("Trip.feelings.drunkenness incr"), ["Trip.feelings.drunkenness", "incr"]);
 assert.deepEqual(parseShorthandEvent("Player sayto Grace"), ["Player", "sayto", "Grace"]);
 assert.throws(() => parseShorthandEvent("only-one-token"));
 

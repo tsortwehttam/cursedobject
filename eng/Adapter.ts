@@ -46,13 +46,12 @@ export function collectContext(parts: string[], world: World): Record<string, Se
 
 export async function collectEntityContext(parts: string[], ctx: IOCtx): Promise<Record<string, SerialValue>> {
   const entities: Record<string, SerialValue> = {};
-  const ids = getEntityIdEnv(ctx.world);
   for (const part of parts) {
     const clause = parseWithClause(part);
     if (!clause) continue;
     for (const id of Object.keys(ctx.world.entities)) {
       const ent = ctx.world.entities[id];
-      const env: Env = { ...ids, ...ent, $id: id };
+      const env: Env = { ...ent, $id: id };
       if (clause.cond && !(await ctx.evalExpr(clause.cond, env))) continue;
       const view = projectEntity(ent, clause.patterns);
       if (Object.keys(view).length > 0) entities[id] = view;
@@ -94,14 +93,6 @@ function projectEntity(ent: Record<string, SerialValue>, patterns: string[]): Re
     for (const match of resolveWildcardPath(ent, pattern)) {
       deepSet(out, match.path, match.value);
     }
-  }
-  return out;
-}
-
-function getEntityIdEnv(world: World): Env {
-  const out: Env = {};
-  for (const id of Object.keys(world.entities)) {
-    out[id] = id;
   }
   return out;
 }

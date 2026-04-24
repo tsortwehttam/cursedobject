@@ -39,7 +39,7 @@ async function testPrint() {
 
 const program = parse(`
   Player inspect {
-    Scene.visible = <<probe with public.*, clothing.* where location == LivingRoom>>;
+    Scene.visible = <<probe with public.*, clothing.* where location == Player.location>>;
   }
 `);
 

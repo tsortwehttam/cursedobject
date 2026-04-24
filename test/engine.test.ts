@@ -57,7 +57,7 @@ await engine.boot();
 // Verify spawn handlers set traits.
 assert.equal(world.entities.Trip?.name, "Trip");
 assert.equal(world.entities.Grace?.name, "Grace");
-assert.equal(world.entities.Trip?.drinks, 0);
+assert.equal(engine.readPath(["Trip", "feelings", "drunkenness"]), 0);
 
 // Round 1: Player greets Trip warmly.
 await engine.emit(engine.mkEvent(["Player", "sayto", "Trip", "Hey Trip, thanks for having me"]));
@@ -72,22 +72,22 @@ assert.equal(tripReplies[0].slots[3], "[chat reply]");
 // Round 2: Player says something affectionate to Grace while Trip present.
 await engine.emit(engine.mkEvent(["Player", "sayto", "Grace", "You look beautiful tonight, Grace"], ["Trip"]));
 
-// Warmth classifier should bump Grace.affection (from 3 → 4).
-assert.equal(world.entities.Grace?.affection, 4, "Grace affection should rise on warm tone");
+// Warmth classifier should bump Grace.feelings.affection (from 3 -> 4).
+assert.equal(engine.readPath(["Grace", "feelings", "affection"]), 4, "Grace affection should rise on warm tone");
 
-// Affection detector should bump Trip.jealousy (from 0 → 1) since Trip observes.
-assert.equal(world.entities.Trip?.jealousy, 1, "Trip jealousy should rise when Player flatters Grace in Trip's presence");
-assert.equal(world.entities.Trip?.tension, 1, "Trip tension should also rise");
+// Affection detector should bump Trip.feelings.jealousy (from 0 -> 1) since Trip observes.
+assert.equal(engine.readPath(["Trip", "feelings", "jealousy"]), 1, "Trip jealousy should rise when Player flatters Grace in Trip's presence");
+assert.equal(engine.readPath(["Trip", "feelings", "tension"]), 1, "Trip tension should also rise");
 
 // Round 3: Player is hostile → Grace affection down.
-const beforeAff = Number(world.entities.Grace?.affection ?? 0);
+const beforeAff = Number(engine.readPath(["Grace", "feelings", "affection"]) ?? 0);
 await engine.emit(engine.mkEvent(["Player", "sayto", "Grace", "You are stupid"]));
-assert.equal(Number(world.entities.Grace?.affection), beforeAff - 1);
+assert.equal(Number(engine.readPath(["Grace", "feelings", "affection"])), beforeAff - 1);
 
-// Round 4: Trip drinks (verb "incr" on Trip.drinks) → tension rises via property-change handler.
-const tensionBefore = Number(world.entities.Trip?.tension ?? 0);
-await engine.emit(engine.mkEvent(["Trip.drinks", "incr"]));
-assert.equal(Number(world.entities.Trip?.tension), tensionBefore + 1);
+// Round 4: Trip drinks (verb "incr" on Trip.feelings.drunkenness) -> tension rises via property-change handler.
+const tensionBefore = Number(engine.readPath(["Trip", "feelings", "tension"]) ?? 0);
+await engine.emit(engine.mkEvent(["Trip.feelings.drunkenness", "incr"]));
+assert.equal(Number(engine.readPath(["Trip", "feelings", "tension"])), tensionBefore + 1);
 
 console.log(`engine.test.ts OK — emitted ${world.events.length} events`);
 }

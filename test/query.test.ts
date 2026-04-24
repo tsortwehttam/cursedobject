@@ -11,8 +11,8 @@ const world: World = {
     { slots: ["Player", "sayto", "Grace", "nice to see you"], obs: ["Trip"], ts: 3 },
     { slots: ["Grace", "sayto", "Player", "thanks"], obs: ["Trip"], ts: 4 },
     { slots: ["Trip", "sayto", "Grace", "everything ok?"], obs: ["Player"], ts: 5 },
-    { slots: ["Trip.drinks", "incr"], obs: [], ts: 6 },
-    { slots: ["Trip.tension", "incr"], obs: [], ts: 7 },
+    { slots: ["Trip.feelings.drunkenness", "incr"], obs: [], ts: 6 },
+    { slots: ["Trip.feelings.tension", "incr"], obs: [], ts: 7 },
   ],
 };
 
@@ -52,13 +52,13 @@ const world: World = {
 
 // 2-slot mut events via rest
 {
-  const r = selectEvents(world, "Trip.* ...");
+  const r = selectEvents(world, "Trip.feelings.* ...");
   assert.equal(r.length, 2);
 }
 
 // Specific mut event
 {
-  const r = selectEvents(world, "Trip.drinks incr");
+  const r = selectEvents(world, "Trip.feelings.drunkenness incr");
   assert.equal(r.length, 1);
   assert.equal(r[0].ts, 6);
 }
