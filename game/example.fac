@@ -41,10 +41,11 @@ Trip spawn {
   pulse;
 }
 
-// Assignment-op aliases for `set`
+// `=` stores, `:=` defines a computed property (evaluated on read).
 Grace spawn {
   Grace.mood = "guarded";
-  Grace.selfEsteem := 5;
+  Grace.selfEsteem = 5;
+  Grace.isConfident := selfEsteem > 3;
 }
 
 // Multiple device decls; one with empty body

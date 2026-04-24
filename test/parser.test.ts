@@ -110,7 +110,7 @@ const emptyDev = program.find(
 assert.ok(emptyDev, "expected device form/onSubmit {} handler");
 assert.ok(Array.isArray(emptyDev!.body) && emptyDev!.body!.length === 0);
 
-// 8g. `=` and `:=` desugar to `set`
+// 8g. `=` desugars to `set`; `:=` produces a `define` cond slot (computed property)
 const graceSpawn = program.find((n) => {
   const a = (n.slots[0] as any).segs?.[0]?.v;
   const b = (n.slots[1] as any).segs?.[0]?.v;
@@ -120,7 +120,11 @@ assert.ok(graceSpawn, "expected Grace spawn handler");
 const setStmts = graceSpawn!.body!.filter(
   (s) => (s.slots[1] as any)?.segs?.[0]?.v === "set",
 );
-assert.ok(setStmts.length >= 2, "expected both = and := to desugar to set");
+assert.ok(setStmts.length >= 1, "expected = to desugar to set");
+const defineStmts = graceSpawn!.body!.filter(
+  (s) => (s.slots[1] as any)?.kind === "define",
+);
+assert.ok(defineStmts.length >= 1, "expected := to produce define cond slot");
 
 // 9. Nested if/switch
 const nested = program[program.length - 1];

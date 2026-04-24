@@ -17,6 +17,7 @@ game boot {
 
 Trip {
   name = "Trip";
+  kind = "character";
   location = "Apartment";
   public {
     name = "Trip";
@@ -36,6 +37,7 @@ Trip {
 
 Grace {
   name = "Grace";
+  kind = "character";
   location = "Apartment";
   public {
     name = "Grace";
@@ -242,7 +244,7 @@ Player sayto Room $msg {
   Room respond "{{tone}}" "{{topic}}" "Room" "{{msg}}";
 }
 
-Player sayto $who $msg if $who == "Trip" || $who == "Grace" {
+Player sayto $who $msg if $who.kind == "character" {
   <<enum tone ; warm|hostile|neutral ; Classify player attitude toward {{$who}}: {{$msg}}>>;
   <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
   Player.intent.tone = "{{tone}}";
@@ -371,45 +373,55 @@ Room crisis if Grace.insight + Trip.insight < 4 && Scene.affinity < 0 {
   <<print color gray ; The apartment feels staged again, but now all exits are visible.>>;
 }
 
+$who react $desc {
+  $who sayto Player <<chat
+    as {{$who}} ;
+    system The player {{$desc}}. React in character given current feelings and the marital scene. One line. ;
+    on * sayto * ... ;
+    recent 12 ;
+    with public.*, feelings.*, insight, private.personality where location == Player.location
+  >>;
+}
+
 Player hug Grace {
   Grace.feelings.affection incr;
   Trip.feelings.jealousy incr;
-  Grace sayto Player <<chat as Grace ; system The player hugged Grace. Receive it with conflicted warmth under marital pressure. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, insight, private.personality where location == Player.location>>;
+  Grace react "hugged you";
 }
 
 Player hug Trip {
   Trip.feelings.affection incr;
-  Trip sayto Player <<chat as Trip ; system The player hugged Trip. Accept it too brightly and use it to restore host control. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, private.personality where location == Player.location>>;
+  Trip react "hugged you";
 }
 
 Player kiss Grace {
   Grace.feelings.affection incr;
   Trip.feelings.jealousy incr 2;
   Scene.tension incr 2;
-  Grace sayto Player <<chat as Grace ; system The player kissed Grace. React with shock, boundary, and visible marriage tension. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, insight, private.personality where location == Player.location>>;
+  Grace react "kissed you — marital line crossed";
 }
 
 Player kiss Trip {
   Trip.feelings.affection incr;
   Grace.feelings.tension incr;
   Scene.tension incr;
-  Trip sayto Player <<chat as Trip ; system The player kissed Trip. React with startled charm and denial. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, private.personality where location == Player.location>>;
+  Trip react "kissed you";
 }
 
-Player hit $target {
+Player hit $target if $target.kind == "character" {
   Scene.tension incr 4;
   $target.feelings.tension incr 2;
-  $target sayto Player <<chat as {{$target}} ; system The player became physically aggressive. End social politeness immediately in one line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, private.personality where location == Player.location>>;
+  $target react "struck you — politeness is over";
 }
 
-Player slap $target {
+Player slap $target if $target.kind == "character" {
   Player hit $target;
 }
 
-Player push $target {
+Player push $target if $target.kind == "character" {
   Scene.tension incr 2;
   $target.feelings.tension incr;
-  $target sayto Player <<chat as {{$target}} ; system The player pushed you. React with shock and rising conflict. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, private.personality where location == Player.location>>;
+  $target react "pushed you";
 }
 
 Player pickup $thing {
@@ -424,12 +436,12 @@ Player drop $thing {
 
 Player giveto Grace $thing {
   Grace.feelings.affection incr;
-  Grace sayto Player <<chat as Grace ; system The player gave Grace {{$thing}}. React through the current marital conflict, not as generic thanks. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, insight, private.personality where location == Player.location>>;
+  Grace react "gave you {{$thing}}";
 }
 
 Player giveto Trip $thing {
   Trip.feelings.affection incr;
-  Trip sayto Player <<chat as Trip ; system The player gave Trip {{$thing}}. Use it to perform charm and control. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, private.personality where location == Player.location>>;
+  Trip react "gave you {{$thing}}";
 }
 
 Trip sayto Player $line {

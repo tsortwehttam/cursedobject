@@ -46,6 +46,8 @@ export class Facsimile {
   private ts = 0;
   private rng;
   log: EngineLog = [];
+  private computed: Map<string, string> = new Map();
+  private readingComputed: Set<string> = new Set();
 
   constructor(world: World, adapter: FacAdapter, program: FacProgram, opts: EngineOptions = {}) {
     this.world = world;
@@ -57,6 +59,28 @@ export class Facsimile {
       params: opts.params ?? {},
     };
     this.rng = createPRNG(this.opts.seed, 0);
+    this.collectComputed(program);
+  }
+
+  private collectComputed(nodes: FacNode[]) {
+    for (const node of nodes) this.collectFrom(node);
+  }
+
+  private collectFrom(node: FacNode) {
+    const first = node.slots[0];
+    const second = node.slots[1];
+    if (first?.t === "ref" && second?.t === "cond" && second.kind === "define") {
+      if (first.segs.some((s) => s.wild)) {
+        throw new Error(`computed path must not have wildcards: ${first.segs.map((s) => s.v).join(".")}`);
+      }
+      const key = first.segs.map((s) => s.v).join(".");
+      const prior = this.computed.get(key);
+      if (prior !== undefined && prior !== second.raw) {
+        throw new Error(`computed ${key} redefined`);
+      }
+      this.computed.set(key, second.raw);
+    }
+    for (const child of node.body ?? []) this.collectFrom(child);
   }
 
   async boot() {
@@ -107,6 +131,10 @@ export class Facsimile {
     if (first && first.t === "cond") {
       if (first.kind === "if") return this.runIf(stmt, env, event, depth);
       if (first.kind === "switch") return this.runSwitch(stmt, env, event, depth);
+      return;
+    }
+    // Computed prop definition — registered statically, no runtime effect.
+    if (stmt.slots.length === 2 && stmt.slots[1].t === "cond" && stmt.slots[1].kind === "define") {
       return;
     }
 
@@ -262,7 +290,19 @@ export class Facsimile {
     const runner = createLoadedRunner(this.rng, vars, {
       has: (arr, v) => Array.isArray(arr) && (arr as SerialValue[]).includes(v),
     });
-    return runner.evaluate(expr);
+    return runner.evaluate(this.resolveWildPaths(expr, vars));
+  }
+
+  // Rewrite `$wild.x.y` → `EntityName.x.y` when $wild is bound to a string naming an entity.
+  // Lets authors write `$target.kind == "character"` naturally in conds and interpolations.
+  private resolveWildPaths(expr: string, vars: Env): string {
+    return expr.replace(/\$(\w+)(?=\.)/g, (match, name) => {
+      const v = vars["$" + name];
+      if (typeof v === "string" && Object.prototype.hasOwnProperty.call(this.world.entities, v)) {
+        return v;
+      }
+      return match;
+    });
   }
 
   async evalExpr(expr: string, env: Env): Promise<SerialValue> {
@@ -279,20 +319,65 @@ export class Facsimile {
   }
 
   private withBaseEnv(env: Env): Env {
-    return { ...this.entityVars(), params: this.opts.params, ...env };
+    return { ...this.entitiesWithComputed(), params: this.opts.params, ...env };
+  }
+
+  private entitiesWithComputed(): Record<string, SerialValue> {
+    if (this.computed.size === 0) return this.entityVars();
+    const out: Record<string, SerialValue> = {};
+    for (const [name, stored] of Object.entries(this.world.entities)) {
+      const entityOut: Record<string, SerialValue> = { ...stored };
+      for (const key of this.computed.keys()) {
+        if (!key.startsWith(name + ".")) continue;
+        if (this.readingComputed.has(key)) continue;
+        const parts = key.split(".");
+        deepSet(entityOut, parts.slice(1), this.readPath(parts));
+      }
+      out[name] = entityOut;
+    }
+    return out;
   }
 
   // ---------- World mutation ----------
 
   mutate(segs: string[], value: SerialValue) {
     if (segs.length === 0) return;
+    const key = segs.join(".");
+    if (this.computed.has(key)) {
+      this.log.push({ kind: "note", msg: `cannot mutate computed ${key}` });
+      return;
+    }
     const [id] = segs;
     if (!this.world.entities[id]) this.world.entities[id] = {};
     deepSet(this.world.entities as Record<string, unknown>, segs, value);
   }
 
   readPath(segs: string[]): SerialValue {
+    const key = segs.join(".");
+    const expr = this.computed.get(key);
+    if (expr !== undefined) {
+      if (this.readingComputed.has(key)) {
+        this.log.push({ kind: "note", msg: `computed cycle at ${key}` });
+        return null;
+      }
+      this.readingComputed.add(key);
+      const result = this.evalExprSync(expr, this.entityScopeEnv(segs[0]));
+      this.readingComputed.delete(key);
+      return result;
+    }
     return deepGet(this.world.entities, segs);
+  }
+
+  private entityScopeEnv(entityName: string): Env {
+    const entity = this.world.entities[entityName] ?? {};
+    const env: Env = { ...entity };
+    for (const key of this.computed.keys()) {
+      if (!key.startsWith(entityName + ".")) continue;
+      if (this.readingComputed.has(key)) continue;
+      const parts = key.split(".");
+      deepSet(env as Record<string, unknown>, parts.slice(1), this.readPath(parts));
+    }
+    return env;
   }
 }
 

@@ -42,7 +42,14 @@ Stmt
   / ScopedBlock
   / IfBlock
   / SwitchBlock
+  / ComputedDefine
   / Handler
+
+ComputedDefine
+  = path:RefSlot _inl ":=" _inl raw:RawDefineRhs Terminator _
+    { return { slots: [path, CO("define", raw.trim())] }; }
+
+RawDefineRhs = $((!(";" / "\n" / "}") .)*)
 
 TopStmt
   = EntityBlock
@@ -124,8 +131,7 @@ RestMarker
 
 // Assignment-operator aliases for the "set" verb: := and = both desugar to set.
 AssignOp
-  = ":=" { return R([{ wild: false, v: "set" }]); }
-  / "="  { return R([{ wild: false, v: "set" }]); }
+  = "="  { return R([{ wild: false, v: "set" }]); }
 
 RefSlot
   = head:RefSeg tail:("." s:RefSeg { return s; })*
@@ -287,8 +293,10 @@ function prefixMutation(slots: Slot[], prefix: RefSeg[]): Slot[] {
 function isMutation(slots: Slot[]): boolean {
   if (slots.length < 2) return false;
   const head = slots[0];
+  if (head.t !== "ref") return false;
   const verb = slots[1];
-  if (head.t !== "ref" || verb.t !== "ref") return false;
+  if (verb.t === "cond" && verb.kind === "define") return true;
+  if (verb.t !== "ref") return false;
   if (verb.segs.length !== 1 || verb.segs[0].wild) return false;
   return verb.segs[0].v === "set" || verb.segs[0].v === "incr" || verb.segs[0].v === "decr";
 }
