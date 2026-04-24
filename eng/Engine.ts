@@ -150,6 +150,25 @@ export class Facsimile {
         await this.emit(this.mkEvent([pathSegs.join("."), verb]), depth + 1);
         return;
       }
+      if (COUNTER_VERBS.has(verb)) {
+        const args = this.resolveMutArgs(stmt.slots.slice(2), env, resolved.slice(2));
+        const cur = Number(this.readPath(pathSegs) ?? 0);
+        const next = applyCounterVerb(verb, cur, args);
+        this.mutate(pathSegs, next);
+        this.log.push({ kind: "mut", msg: `${pathSegs.join(".")} ${verb} → ${next}` });
+        await this.emit(this.mkEvent([pathSegs.join("."), verb]), depth + 1);
+        return;
+      }
+      if (ARRAY_VERBS.has(verb) || SET_VERBS.has(verb)) {
+        const args = this.resolveMutArgs(stmt.slots.slice(2), env, resolved.slice(2));
+        const curRaw = this.readPath(pathSegs);
+        const cur = Array.isArray(curRaw) ? curRaw.slice() : [];
+        const next = SET_VERBS.has(verb) ? applySetVerb(verb, cur, args) : applyArrayVerb(verb, cur, args);
+        this.mutate(pathSegs, next);
+        this.log.push({ kind: "mut", msg: `${pathSegs.join(".")} ${verb} → ${JSON.stringify(next)}` });
+        await this.emit(this.mkEvent([pathSegs.join("."), verb]), depth + 1);
+        return;
+      }
     }
 
     // Otherwise: emit as sub-event.
@@ -161,6 +180,10 @@ export class Facsimile {
     const segs = expandRef(slot, env);
     const found = deepGet(this.withBaseEnv(env), segs);
     return found ?? value;
+  }
+
+  private resolveMutArgs(slots: Slot[], env: Env, resolved: SerialValue[]): SerialValue[] {
+    return slots.map((s, i) => this.resolveMutationValue(s, env, resolved[i]));
   }
 
   private async runIf(stmt: FacNode, env: Env, event: FacEvent, depth: number) {
@@ -322,6 +345,75 @@ export function matchSlot(p: Slot, v: SerialValue, env: Env): boolean {
     return true;
   }
   return false;
+}
+
+// ---------- Mutation verb tables ----------
+
+export type ArrayVerb =
+  | "push" | "unshift" | "pop" | "shift"
+  | "remove" | "removeAll" | "insert" | "removeAt" | "clear";
+export type SetVerb = "add" | "delete" | "toggle" | "clear";
+export type CounterVerb = "clamp" | "min" | "max";
+
+export const ARRAY_VERBS: Set<string> = new Set<ArrayVerb>([
+  "push", "unshift", "pop", "shift", "remove", "removeAll", "insert", "removeAt", "clear",
+]);
+export const SET_VERBS: Set<string> = new Set<SetVerb>(["add", "delete", "toggle", "clear"]);
+export const COUNTER_VERBS: Set<string> = new Set<CounterVerb>(["clamp", "min", "max"]);
+
+function eq(a: SerialValue, b: SerialValue): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function applyArrayVerb(verb: string, cur: SerialValue[], args: SerialValue[]): SerialValue[] {
+  if (verb === "push") return [...cur, ...args];
+  if (verb === "unshift") return [...args, ...cur];
+  if (verb === "pop") return cur.slice(0, -1);
+  if (verb === "shift") return cur.slice(1);
+  if (verb === "clear") return [];
+  if (verb === "remove") {
+    const i = cur.findIndex((v) => eq(v, args[0]));
+    if (i < 0) return cur;
+    const next = cur.slice();
+    next.splice(i, 1);
+    return next;
+  }
+  if (verb === "removeAll") return cur.filter((v) => !eq(v, args[0]));
+  if (verb === "insert") {
+    const i = Math.max(0, Math.min(cur.length, Number(args[0] ?? 0)));
+    const next = cur.slice();
+    next.splice(i, 0, ...args.slice(1));
+    return next;
+  }
+  if (verb === "removeAt") {
+    const i = Number(args[0] ?? -1);
+    if (i < 0 || i >= cur.length) return cur;
+    const next = cur.slice();
+    next.splice(i, 1);
+    return next;
+  }
+  return cur;
+}
+
+export function applySetVerb(verb: string, cur: SerialValue[], args: SerialValue[]): SerialValue[] {
+  if (verb === "clear") return [];
+  const v = args[0];
+  const has = cur.some((x) => eq(x, v));
+  if (verb === "add") return has ? cur : [...cur, v];
+  if (verb === "delete") return has ? cur.filter((x) => !eq(x, v)) : cur;
+  if (verb === "toggle") return has ? cur.filter((x) => !eq(x, v)) : [...cur, v];
+  return cur;
+}
+
+export function applyCounterVerb(verb: string, cur: number, args: SerialValue[]): number {
+  if (verb === "clamp") {
+    const lo = Number(args[0] ?? -Infinity);
+    const hi = Number(args[1] ?? Infinity);
+    return Math.max(lo, Math.min(hi, cur));
+  }
+  if (verb === "min") return Math.min(cur, Number(args[0] ?? cur));
+  if (verb === "max") return Math.max(cur, Number(args[0] ?? cur));
+  return cur;
 }
 
 function expandRef(s: Extract<Slot, { t: "ref" }>, env: Env): string[] {
