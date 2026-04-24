@@ -18,6 +18,7 @@ game boot {
 Trip {
   name = "Trip";
   kind = "character";
+  affinitySign = 1;
   location = "Apartment";
   public {
     name = "Trip";
@@ -38,6 +39,7 @@ Trip {
 Grace {
   name = "Grace";
   kind = "character";
+  affinitySign = -1;
   location = "Apartment";
   public {
     name = "Grace";
@@ -233,37 +235,29 @@ Trip.feelings.drunkenness incr {
   Scene.tension incr;
 }
 
-Player sayto Room $msg {
-  <<enum tone ; warm|hostile|neutral ; Classify player attitude toward hosts: {{$msg}}>>;
-  <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
-  Player.intent.tone = "{{tone}}";
-  Player.intent.topic = "{{topic}}";
-  Scene.topic = "{{topic}}";
-  Room player-tone "{{tone}}";
-  Room player-topic "{{topic}}";
-  Room respond "{{tone}}" "{{topic}}" "Room" "{{msg}}";
-}
-
-Player sayto $who $msg if $who.kind == "character" {
+Player sayto $who $msg {
   <<enum tone ; warm|hostile|neutral ; Classify player attitude toward {{$who}}: {{$msg}}>>;
   <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
   Player.intent.tone = "{{tone}}";
   Player.intent.topic = "{{topic}}";
   Scene.topic = "{{topic}}";
-  {{#if tone == "warm"}}
-    {{#if $who == "Trip"}}
-      Scene.affinity incr;
-    {{#else}}
-      Scene.affinity decr;
-    {{#end}}
+  Room player-topic "{{topic}}";
+  Scene respond;
+}
+
+Player sayto Room $msg {
+  Room player-tone "{{Player.intent.tone}}";
+}
+
+Player sayto $who $msg if $who.kind == "character" {
+  {{#if Player.intent.tone == "warm"}}
     $who.feelings.affection incr;
-  {{#elsif tone == "hostile"}}
+    Scene.affinity incr $who.affinitySign;
+  {{#elsif Player.intent.tone == "hostile"}}
     $who.feelings.affection decr;
     $who.feelings.tension incr;
     Scene.tension incr;
   {{#end}}
-  Room player-topic "{{topic}}";
-  Room respond "{{tone}}" "{{topic}}" "{{$who}}" "{{$msg}}";
 }
 
 Room player-tone "warm" {
@@ -312,8 +306,8 @@ Trip.feelings.jealousy incr {
   Scene.tension incr;
 }
 
-Room respond $tone $topic $target $msg if Scene.tension < 4 {
-  {{#switch $topic}}
+Scene respond if Scene.tension < 4 {
+  {{#switch Scene.topic}}
     {{#case drinks}}
       Trip sayto Player <<chat as Trip ; system Player is talking about drinks. Trip should seize control of hospitality and suggest or defend a drink. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, private.personality where location == Player.location>>;
       Grace sayto Player <<chat as Grace ; system Player is talking about drinks. Grace should lightly counter Trip's drink performance. One line. ; on * sayto * ... ; recent 12 ; with public.*, feelings.*, private.personality where location == Player.location>>;
@@ -329,9 +323,9 @@ Room respond $tone $topic $target $msg if Scene.tension < 4 {
   {{#end}}
 }
 
-Room respond $tone $topic $target $msg if Scene.tension >= 4 && Scene.tension < 8 {
+Scene respond if Scene.tension >= 4 && Scene.tension < 8 {
   Scene.beat = "accusations";
-  {{#switch $topic}}
+  {{#switch Scene.topic}}
     {{#case marriage}}
       Grace sayto Player <<chat as Grace ; system The player mentioned marriage. Grace should stop pretending and name one problem without fully breaking. One line. ; on * sayto * ... ; recent 14 ; with public.*, feelings.*, insight, private.personality where location == Player.location>>;
       Trip sayto Player <<chat as Trip ; system The player mentioned marriage. Trip should defend the marriage and make it about appearances. One line. ; on * sayto * ... ; recent 14 ; with public.*, feelings.*, insight, private.personality where location == Player.location>>;
@@ -347,7 +341,7 @@ Room respond $tone $topic $target $msg if Scene.tension >= 4 && Scene.tension < 
   {{#end}}
 }
 
-Room respond $tone $topic $target $msg if Scene.tension >= 8 && Scene.finished == false {
+Scene respond if Scene.tension >= 8 && Scene.finished == false {
   Scene.beat = "crisis";
   Room crisis;
 }

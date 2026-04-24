@@ -169,7 +169,9 @@ export class Facsimile {
         return;
       }
       if (verb === "incr" || verb === "decr") {
-        const n = stmt.slots.length === 3 ? Number(resolved[2] ?? 1) : 1;
+        const n = stmt.slots.length === 3
+          ? Number(this.resolveMutationValue(stmt.slots[2], env, resolved[2]) ?? 1)
+          : 1;
         const cur = Number(this.readPath(pathSegs) ?? 0);
         const next = verb === "incr" ? cur + n : cur - n;
         this.mutate(pathSegs, next);
