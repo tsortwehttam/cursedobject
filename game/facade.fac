@@ -8,12 +8,12 @@ game boot {
     finished = false;
   }
   with Player {
-    name = "Player";
+    name = params.playerName;
     role = "old college friend invited for drinks";
     location = "Hallway";
     holding = "nothing";
   }
-  <<#narrate You stand outside Grace and Trip's apartment. Their argument leaks through the door. Type dialogue directly. Use /knock door when ready.>>;
+  <<print color gray ; You stand outside Grace and Trip's apartment. Type dialogue directly, or use /actions to inspect what you can do.>>;
 }
 
 Trip {
@@ -115,85 +115,93 @@ ItalyPhoto {
 }
 
 Player lookat Apartment {
-  <<#say Apartment: {{Apartment.public.look}}>>;
+  <<print Apartment: {{Apartment.public.look}}>>;
 }
 
 Player lookat Room {
-  <<#say Conversation: {{Room.public.look}}>>;
+  <<print Conversation: {{Room.public.look}}>>;
 }
 
 Player lookat BarCart {
-  <<#say Bar cart: {{BarCart.public.look}}>>;
+  <<print Bar cart: {{BarCart.public.look}}>>;
 }
 
 Player lookat Painting {
-  <<#say Painting: {{Painting.public.look}}>>;
+  <<print Painting: {{Painting.public.look}}>>;
 }
 
 Player lookat Sculpture {
-  <<#say Sculpture: {{Sculpture.public.look}}>>;
+  <<print Sculpture: {{Sculpture.public.look}}>>;
 }
 
 Player lookat Vase {
-  <<#say Vase: {{Vase.public.look}}>>;
+  <<print Vase: {{Vase.public.look}}>>;
 }
 
 Player lookat Stereo {
-  <<#say Stereo: {{Stereo.public.look}}>>;
+  <<print Stereo: {{Stereo.public.look}}>>;
 }
 
 Player lookat Door {
-  <<#say Door: {{Door.public.look}}>>;
+  <<print Door: {{Door.public.look}}>>;
 }
 
 Player lookat WeddingPhoto {
-  <<#say Wedding photo: {{WeddingPhoto.public.look}}>>;
+  <<print Wedding photo: {{WeddingPhoto.public.look}}>>;
 }
 
 Player lookat ItalyPhoto {
-  <<#say Italy photo: {{ItalyPhoto.public.look}}>>;
+  <<print Italy photo: {{ItalyPhoto.public.look}}>>;
 }
 
 Player lookat Grace {
-  <<#say Grace: {{Grace.public.look}}>>;
+  <<print Grace: {{Grace.public.look}}>>;
 }
 
 Player lookat Trip {
-  <<#say Trip: {{Trip.public.look}}>>;
+  <<print Trip: {{Trip.public.look}}>>;
 }
 
 Player lookat $thing {
-  <<#say You do not notice much about {{$thing}}.>>;
+  <<print You do not notice much about {{$thing}}.>>;
 }
 
 Player unknown $cmd $body {
-  <<#say Unknown slash command /{{$cmd}}. Try /help, /look painting, /use bar, /hug grace, /kiss trip, /give drink to grace.>>;
+  <<print Unknown slash command /{{$cmd}}. Try /actions or /help.>>;
 }
 
-Player knock Door if Scene.beat == "door" {
+Player listen Door if Player.location == "Hallway" {
+  <<print color gray ; Through the door, Grace says something clipped. Trip answers too brightly, then lowers his voice when the floor creaks under you.>>;
+}
+
+Player listen Room if Player.location == "Apartment" {
+  <<print color gray ; Inside, every pause feels staged. Grace and Trip keep listening for what you will say next.>>;
+}
+
+Player knock Door if Player.location == "Hallway" {
   Scene.beat = "arrival";
   Player.location = "Apartment";
-  <<#say Trip: Oh! You're here! Hey, it's been too long. Come in, come in.>>;
-  <<#say Grace: Trip, you said later. God. Hi. It's good to see you.>>;
+  Trip sayto Player "Oh! You're here! Hey, it's been too long. Come in, come in.";
+  Grace sayto Player "Trip, you said later. God. Hi. It's good to see you.";
   Trip sayto Player "We were just about to have drinks.";
   Room beat drinks;
 }
 
-Player knock Door if Scene.beat != "door" {
-  <<#say You are already inside.>>;
+Player knock Door if Player.location != "Hallway" {
+  <<print You are already inside.>>;
 }
 
 Room beat drinks {
   Scene.beat = "drinks";
   Scene.topic = "drinks";
-  Trip sayto Player <<#chat
+  Trip sayto Player <<chat
     as Trip ;
     system You are Trip from Facade. The player is an old friend just entering the apartment. Offer drinks as hospitality and status performance. Keep one spoken line under 32 words. ;
     on * sayto * ... ;
     recent 10 ;
     with public.*, role, affection, tension, jealousy, drinks, private.need where location == "Apartment"
   >>;
-  Grace sayto Player <<#chat
+  Grace sayto Player <<chat
     as Grace ;
     system You are Grace from Facade. Trip is making drinks too important. Undercut him while staying socially polite. Keep one spoken line under 28 words. ;
     on * sayto * ... ;
@@ -205,14 +213,14 @@ Room beat drinks {
 Player use BarCart {
   Trip.drinks incr;
   Scene.topic = "drinks";
-  Trip sayto Player <<#chat
+  Trip sayto Player <<chat
     as Trip ;
     system You are Trip. The player engaged with the bar cart. Turn drink preparation into charm and status. If tension is high sound more desperate. One line only. ;
     on * sayto * ... ;
     recent 12 ;
     with public.*, role, affection, tension, jealousy, drinks, private.* where location == "Apartment"
   >>;
-  Grace sayto Player <<#chat
+  Grace sayto Player <<chat
     as Grace ;
     system You are Grace. Trip is overperforming drinks. Push back with irritation proportional to tension. One line only. ;
     on * sayto * ... ;
@@ -227,8 +235,8 @@ Trip.drinks incr {
 }
 
 Player sayto Room $msg {
-  <<#enum tone ; warm|hostile|neutral ; Classify player attitude toward hosts: {{$msg}}>>;
-  <<#enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
+  <<enum tone ; warm|hostile|neutral ; Classify player attitude toward hosts: {{$msg}}>>;
+  <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
   Player.intent.tone = "{{tone}}";
   Player.intent.topic = "{{topic}}";
   Scene.topic = "{{topic}}";
@@ -238,8 +246,8 @@ Player sayto Room $msg {
 }
 
 Player sayto Trip $msg {
-  <<#enum tone ; warm|hostile|neutral ; Classify player attitude toward Trip: {{$msg}}>>;
-  <<#enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
+  <<enum tone ; warm|hostile|neutral ; Classify player attitude toward Trip: {{$msg}}>>;
+  <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
   Player.intent.tone = "{{tone}}";
   Player.intent.topic = "{{topic}}";
   Scene.topic = "{{topic}}";
@@ -256,8 +264,8 @@ Player sayto Trip $msg {
 }
 
 Player sayto Grace $msg {
-  <<#enum tone ; warm|hostile|neutral ; Classify player attitude toward Grace: {{$msg}}>>;
-  <<#enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
+  <<enum tone ; warm|hostile|neutral ; Classify player attitude toward Grace: {{$msg}}>>;
+  <<enum topic ; drinks|decor|art|marriage|sex|divorce|parents|therapy|other ; Classify main topic: {{$msg}}>>;
   Player.intent.tone = "{{tone}}";
   Player.intent.topic = "{{topic}}";
   Scene.topic = "{{topic}}";
@@ -308,7 +316,7 @@ Room player-topic /sex|divorce|marriage/ {
 }
 
 Player sayto Grace $msg if $obs has "Trip" {
-  <<#bool affectionate ; Does this player line flirt with or strongly praise Grace: {{$msg}}>>;
+  <<bool affectionate ; Does this player line flirt with or strongly praise Grace: {{$msg}}>>;
   {{#if affectionate}}
     Trip.jealousy incr;
     Trip.tension incr;
@@ -322,17 +330,17 @@ Trip.jealousy incr {
 Room respond $tone $topic $target $msg if Scene.tension < 4 {
   {{#switch $topic}}
     {{#case drinks}}
-      Trip sayto Player <<#chat as Trip ; system Player is talking about drinks. Trip should seize control of hospitality and suggest or defend a drink. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, drinks, private.* where location == "Apartment">>;
-      Grace sayto Player <<#chat as Grace ; system Player is talking about drinks. Grace should lightly counter Trip's drink performance. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system Player is talking about drinks. Trip should seize control of hospitality and suggest or defend a drink. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, drinks, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system Player is talking about drinks. Grace should lightly counter Trip's drink performance. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
     {{#case art}}
-      Grace sayto Player <<#chat as Grace ; system Player is touching the art topic. Grace reveals pride and discomfort about her art and Trip's taste. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
-      Trip sayto Player <<#chat as Trip ; system Player is touching the art topic. Trip redirects toward decor and status without understanding Grace. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system Player is touching the art topic. Grace reveals pride and discomfort about her art and Trip's taste. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system Player is touching the art topic. Trip redirects toward decor and status without understanding Grace. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
     {{#case decor}}
-      Trip sayto Player <<#chat as Trip ; system Player is discussing apartment decor. Trip brags about taste and tries to make Grace agree. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
-      Grace sayto Player <<#chat as Grace ; system Player is discussing apartment decor. Grace sounds trapped by surfaces. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system Player is discussing apartment decor. Trip brags about taste and tries to make Grace agree. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system Player is discussing apartment decor. Grace sounds trapped by surfaces. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
     {{#default}}
-      Trip sayto Player <<#chat as Trip ; system Respond to the player's line as Trip. Maintain bright host mask while steering away from marital truth. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
-      Grace sayto Player <<#chat as Grace ; system Respond to the player's line as Grace. Let tension show beneath politeness. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system Respond to the player's line as Trip. Maintain bright host mask while steering away from marital truth. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system Respond to the player's line as Grace. Let tension show beneath politeness. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
   {{#end}}
 }
 
@@ -340,17 +348,17 @@ Room respond $tone $topic $target $msg if Scene.tension >= 4 && Scene.tension < 
   Scene.beat = "accusations";
   {{#switch $topic}}
     {{#case marriage}}
-      Grace sayto Player <<#chat as Grace ; system The player mentioned marriage. Grace should stop pretending and name one problem without fully breaking. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
-      Trip sayto Player <<#chat as Trip ; system The player mentioned marriage. Trip should defend the marriage and make it about appearances. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system The player mentioned marriage. Grace should stop pretending and name one problem without fully breaking. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system The player mentioned marriage. Trip should defend the marriage and make it about appearances. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
     {{#case divorce}}
-      Trip sayto Player <<#chat as Trip ; system The player said divorce. Trip panics and rejects the word while trying to sound calm. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
-      Grace sayto Player <<#chat as Grace ; system The player said divorce. Grace should be angry that the hidden question is now spoken. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system The player said divorce. Trip panics and rejects the word while trying to sound calm. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system The player said divorce. Grace should be angry that the hidden question is now spoken. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
     {{#case sex}}
-      Grace sayto Player <<#chat as Grace ; system The player touched sex or intimacy. Grace should expose distance without giving a lecture. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
-      Trip sayto Player <<#chat as Trip ; system The player touched sex or intimacy. Trip should deflect and sound embarrassed. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system The player touched sex or intimacy. Grace should expose distance without giving a lecture. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system The player touched sex or intimacy. Trip should deflect and sound embarrassed. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
     {{#default}}
-      Grace sayto Player <<#chat as Grace ; system Tension is rising. Respond to the player by sharpening the conflict with Trip. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
-      Trip sayto Player <<#chat as Trip ; system Tension is rising. Respond as Trip trying to regain control and deny conflict. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
+      Grace sayto Player <<chat as Grace ; system Tension is rising. Respond to the player by sharpening the conflict with Trip. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+      Trip sayto Player <<chat as Trip ; system Tension is rising. Respond as Trip trying to regain control and deny conflict. One line. ; on * sayto * ... ; recent 14 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
   {{#end}}
 }
 
@@ -361,54 +369,54 @@ Room respond $tone $topic $target $msg if Scene.tension >= 8 && Scene.finished =
 
 Room crisis if Grace.self + Trip.self >= 4 {
   Scene.finished = true;
-  Grace sayto Player <<#chat as Grace ; system This is the climax. Because both Grace and Trip have some self-realization, Grace admits her own part in the marriage failure. One line only, emotionally direct. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
-  Trip sayto Player <<#chat as Trip ; system This is the climax. Because both have some self-realization, Trip admits his performance and control hurt Grace. One line only, emotionally direct. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
-  <<#narrate The performance breaks. They stop hosting and start talking to each other.>>;
+  Grace sayto Player <<chat as Grace ; system This is the climax. Because both Grace and Trip have some self-realization, Grace admits her own part in the marriage failure. One line only, emotionally direct. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+  Trip sayto Player <<chat as Trip ; system This is the climax. Because both have some self-realization, Trip admits his performance and control hurt Grace. One line only, emotionally direct. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
+  <<print color gray ; The performance breaks. They stop hosting and start talking to each other.>>;
 }
 
 Room crisis if Grace.self + Trip.self < 4 && Scene.affinity >= 0 {
   Scene.finished = true;
-  Trip sayto Player <<#chat as Trip ; system This is the bad ending. Trip believes the player sided against Grace enough to make him defensive. Ask the player to leave in one tense line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
-  Grace sayto Player <<#chat as Grace ; system This is the bad ending. Grace is furious and wounded because nothing was learned. One line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
-  <<#narrate The room closes around the old pattern. You are no longer useful to them.>>;
+  Trip sayto Player <<chat as Trip ; system This is the bad ending. Trip believes the player sided against Grace enough to make him defensive. Ask the player to leave in one tense line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
+  Grace sayto Player <<chat as Grace ; system This is the bad ending. Grace is furious and wounded because nothing was learned. One line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+  <<print color gray ; The room closes around the old pattern. You are no longer useful to them.>>;
 }
 
 Room crisis if Grace.self + Trip.self < 4 && Scene.affinity < 0 {
   Scene.finished = true;
-  Grace sayto Player <<#chat as Grace ; system This is the bad ending. Grace believes the player exposed Trip but not the truth. Ask the player to leave in one cold line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
-  Trip sayto Player <<#chat as Trip ; system This is the bad ending. Trip is humiliated and angry. One line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
-  <<#narrate The apartment feels staged again, but now all exits are visible.>>;
+  Grace sayto Player <<chat as Grace ; system This is the bad ending. Grace believes the player exposed Trip but not the truth. Ask the player to leave in one cold line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+  Trip sayto Player <<chat as Trip ; system This is the bad ending. Trip is humiliated and angry. One line. ; on * sayto * ... ; recent 18 ; with public.*, role, affection, tension, jealousy, self, private.* where location == "Apartment">>;
+  <<print color gray ; The apartment feels staged again, but now all exits are visible.>>;
 }
 
 Player hug Grace {
   Grace.affection incr;
   Trip.jealousy incr;
-  Grace sayto Player <<#chat as Grace ; system The player hugged Grace. Receive it with conflicted warmth under marital pressure. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+  Grace sayto Player <<chat as Grace ; system The player hugged Grace. Receive it with conflicted warmth under marital pressure. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
 }
 
 Player hug Trip {
   Trip.affection incr;
-  Trip sayto Player <<#chat as Trip ; system The player hugged Trip. Accept it too brightly and use it to restore host control. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
+  Trip sayto Player <<chat as Trip ; system The player hugged Trip. Accept it too brightly and use it to restore host control. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
 }
 
 Player kiss Grace {
   Grace.affection incr;
   Trip.jealousy incr 2;
   Scene.tension incr 2;
-  Grace sayto Player <<#chat as Grace ; system The player kissed Grace. React with shock, boundary, and visible marriage tension. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+  Grace sayto Player <<chat as Grace ; system The player kissed Grace. React with shock, boundary, and visible marriage tension. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
 }
 
 Player kiss Trip {
   Trip.affection incr;
   Grace.tension incr;
   Scene.tension incr;
-  Trip sayto Player <<#chat as Trip ; system The player kissed Trip. React with startled charm and denial. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
+  Trip sayto Player <<chat as Trip ; system The player kissed Trip. React with startled charm and denial. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
 }
 
 Player hit $target {
   Scene.tension incr 4;
   $target.tension incr 2;
-  $target sayto Player <<#chat as {{$target}} ; system The player became physically aggressive. End social politeness immediately in one line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
+  $target sayto Player <<chat as {{$target}} ; system The player became physically aggressive. End social politeness immediately in one line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
 }
 
 Player slap $target {
@@ -418,41 +426,41 @@ Player slap $target {
 Player push $target {
   Scene.tension incr 2;
   $target.tension incr;
-  $target sayto Player <<#chat as {{$target}} ; system The player pushed you. React with shock and rising conflict. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
+  $target sayto Player <<chat as {{$target}} ; system The player pushed you. React with shock and rising conflict. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, private.* where location == "Apartment">>;
 }
 
 Player pickup $thing {
   Player.holding = "{{$thing}}";
-  <<#narrate You pick up {{$thing}}.>>;
+  <<print color gray ; You pick up {{$thing}}.>>;
 }
 
 Player drop $thing {
   Player.holding = "nothing";
-  <<#narrate You put down {{$thing}}.>>;
+  <<print color gray ; You put down {{$thing}}.>>;
 }
 
 Player giveto Grace $thing {
   Grace.affection incr;
-  Grace sayto Player <<#chat as Grace ; system The player gave Grace {{$thing}}. React through the current marital conflict, not as generic thanks. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
+  Grace sayto Player <<chat as Grace ; system The player gave Grace {{$thing}}. React through the current marital conflict, not as generic thanks. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, self, private.* where location == "Apartment">>;
 }
 
 Player giveto Trip $thing {
   Trip.affection incr;
-  Trip sayto Player <<#chat as Trip ; system The player gave Trip {{$thing}}. Use it to perform charm and control. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
+  Trip sayto Player <<chat as Trip ; system The player gave Trip {{$thing}}. Use it to perform charm and control. One line. ; on * sayto * ... ; recent 12 ; with public.*, role, affection, tension, jealousy, private.* where location == "Apartment">>;
 }
 
 Trip sayto Player $line {
-  <<#say Trip: {{$line}}>>;
+  <<print color cyan ; Trip: {{$line}}>>;
 }
 
 Grace sayto Player $line {
-  <<#say Grace: {{$line}}>>;
+  <<print color magenta ; Grace: {{$line}}>>;
 }
 
 Trip sayto Grace $line {
-  <<#say Trip to Grace: {{$line}}>>;
+  <<print color cyan ; Trip to Grace: {{$line}}>>;
 }
 
 Grace sayto Trip $line {
-  <<#say Grace to Trip: {{$line}}>>;
+  <<print color magenta ; Grace to Trip: {{$line}}>>;
 }

@@ -109,7 +109,7 @@ import { parse } from "../eng/Parser";
 {
   const src = `
 Trip spawn {
-  <<#chat
+  <<chat
     as Trip ;
     on * sayto Trip ;
     You are Trip, a 30-something host.

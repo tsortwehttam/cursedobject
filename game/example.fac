@@ -33,7 +33,7 @@ $1 lookat MonetPainting {
 
 // Enum io with pipe-separated values
 Bob spawn {
-  <<#enum mood ; happy|sad|angry ; What mood is Bob in?>>;
+  <<enum mood ; happy|sad|angry ; What mood is Bob in?>>;
 }
 
 // Bare single-ident statement
@@ -66,18 +66,18 @@ $1 lookat Trip {
 }
 
 // AI io in head value slot
-Trip sayto Grace <<#match I dislike you ; $value>> {
-  Grace sayto Trip <<#chat Express your dislike for Trip>>;
+Trip sayto Grace <<match I dislike you ; $value>> {
+  Grace sayto Trip <<chat Express your dislike for Trip>>;
 }
 
 // AI io with handler cond
-$1 sayto Grace <<#match I'm in love with you ; $value>> if $obs has Trip {
+$1 sayto Grace <<match I'm in love with you ; $value>> if $obs has Trip {
   Trip.jealousy incr;
 }
 
 // Meta — io in value slot with context params
 $1 sayto $2 $3 {
-  $2 sayto $1 <<#chat {{$1}} said {{$3}} to you. Respond as {{$2}}. ; context $2.*>>;
+  $2 sayto $1 <<chat {{$1}} said {{$3}} to you. Respond as {{$2}}. ; context $2.*>>;
 }
 
 // Device events (verb may contain slashes)
@@ -92,7 +92,7 @@ game boot {
 
 // Nested conditionals + switch
 a b c {
-  <<#bool romantic ; Does Jim feel romantic toward Sue? ; context Jim.*>>;
+  <<bool romantic ; Does Jim feel romantic toward Sue? ; context Jim.*>>;
   {{#if foo > bar}}
     {{#if nested > 0}}
       Jim.mood set elated;

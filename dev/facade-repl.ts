@@ -5,6 +5,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { createAIAdapter } from "../eng/AIAdapter";
 import { Facsimile, type World } from "../eng/Engine";
 import { parse } from "../eng/Parser";
+import { listREPLActions } from "../eng/REPLActions";
 import { parseREPLInput } from "../eng/REPLInput";
 import { createREPLAdapter } from "../eng/REPLAdapter";
 
@@ -30,18 +31,21 @@ const IDS = [
 async function main() {
   const src = readFileSync(SCRIPT, "utf8");
   const program = parse(src);
+  const rl = readline.createInterface({ input, output });
+  const playerName = await ask(rl, "What is your name? ");
   const world: World = {
     entities: Object.fromEntries(IDS.map((id) => [id, {}])),
     events: [],
   };
   const ai = createAIAdapter();
   const repl = createREPLAdapter((text) => output.write(text));
-  const engine = new Facsimile(world, { methods: { ...ai.methods, ...repl.methods } }, program);
+  const engine = new Facsimile(world, { methods: { ...ai.methods, ...repl.methods } }, program, {
+    params: { playerName },
+  });
 
   await engine.boot();
-  output.write("\nFacade REPL. Type dialogue directly. Slash commands: /look painting, /use bar, /hug grace, /state, /events, /quit.\n\n> ");
+  output.write("\nFacade REPL. Type dialogue directly. Use /actions to list available actions.\n\n> ");
 
-  const rl = readline.createInterface({ input, output });
   for await (const raw of rl) {
     const parsed = parseREPLInput(raw);
     if (parsed.kind === "empty") {
@@ -50,7 +54,7 @@ async function main() {
     }
     if (parsed.kind === "quit") break;
     if (parsed.kind === "meta") {
-      printMeta(parsed.command, engine);
+      await printMeta(parsed.command, engine);
       output.write("> ");
       continue;
     }
@@ -64,9 +68,19 @@ async function main() {
   rl.close();
 }
 
-function printMeta(command: string, engine: Facsimile) {
+async function ask(rl: readline.Interface, prompt: string): Promise<string> {
+  const answer = (await rl.question(prompt)).trim();
+  return answer.length > 0 ? answer : "Player";
+}
+
+async function printMeta(command: string, engine: Facsimile) {
   if (command === "help") {
-    output.write("Dialogue: type anything. Actions: /look <thing>, /use <thing>, /give <thing> to <person>, /hug <person>, /kiss <person>, /state, /events, /log, /quit\n");
+    output.write("Dialogue: type anything. Meta: /actions, /state, /events, /log, /quit\n");
+    return;
+  }
+  if (command === "actions") {
+    const lines = await listREPLActions(engine);
+    output.write(lines.length ? `${lines.join("\n")}\n` : "No obvious actions.\n");
     return;
   }
   if (command === "state") {

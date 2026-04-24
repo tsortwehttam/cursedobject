@@ -3,7 +3,7 @@ export type Clause = { tag: string | null; payload: string };
 // Given `;`-split parts from an io directive, classify each part by its leading tag word.
 // A part whose first whitespace-delimited token is in `knownTags` becomes {tag, payload=rest}.
 // Otherwise the whole part is an untagged payload (tag = null).
-// Use case: <<#chat as Trip ; on * sayto Trip ... ; You are Trip... >>
+// Use case: <<chat as Trip ; on * sayto Trip ... ; You are Trip... >>
 export function parseClauses(parts: string[], knownTags: Set<string>): Clause[] {
   const out: Clause[] = [];
   for (const p of parts) {

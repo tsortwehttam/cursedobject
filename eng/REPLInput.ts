@@ -12,6 +12,7 @@ const TARGETS: Record<string, string> = {
   cart: "BarCart",
   couch: "Couch",
   coucharea: "Couch",
+  conversation: "Room",
   door: "Door",
   drink: "Drink",
   grace: "Grace",
@@ -33,6 +34,7 @@ const ACTION_VERBS: Record<string, string> = {
   hug: "hug",
   kiss: "kiss",
   knock: "knock",
+  listen: "listen",
   look: "lookat",
   move: "move",
   pickup: "pickup",
@@ -54,7 +56,7 @@ export function parseREPLInput(raw: string): ParsedREPLInput {
   const [cmd, ...rest] = line.slice(1).split(/\s+/);
   const command = cmd.toLowerCase();
   const body = rest.join(" ").trim();
-  if (command === "state" || command === "log" || command === "events" || command === "help") {
+  if (command === "state" || command === "log" || command === "events" || command === "help" || command === "actions") {
     return { kind: "meta", command };
   }
   if (command === "say") {
@@ -65,6 +67,7 @@ export function parseREPLInput(raw: string): ParsedREPLInput {
   const verb = ACTION_VERBS[command];
   if (!verb) return { kind: "event", slots: ["Player", "unknown", command, body], obs: ["Grace", "Trip"] };
   if (command === "move") return { kind: "event", slots: ["Player", verb, resolveTarget(body || "Apartment")], obs: ["Grace", "Trip"] };
+  if (command === "listen") return { kind: "event", slots: ["Player", verb, resolveTarget(body || "Door")], obs: ["Grace", "Trip"] };
   if (command === "give") {
     const [thing, target] = parseGive(body);
     return { kind: "event", slots: ["Player", verb, resolveTarget(target), resolveTarget(thing)], obs: ["Grace", "Trip"] };

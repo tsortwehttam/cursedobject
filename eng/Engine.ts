@@ -27,6 +27,13 @@ export type EngineLog = { kind: "event" | "mut" | "io" | "note"; msg: string }[]
 export type EngineOptions = {
   maxDepth?: number; // default 32; caps recursive emit depth
   seed?: string | number; // PRNG seed for interpolation variation / script funcs
+  params?: Record<string, SerialValue>;
+};
+
+type ResolvedEngineOptions = {
+  maxDepth: number;
+  seed: string | number;
+  params: Record<string, SerialValue>;
 };
 
 const DEFAULT_MAX_DEPTH = 32;
@@ -35,7 +42,7 @@ export class Facsimile {
   world: World;
   adapter: FacAdapter;
   program: FacProgram;
-  opts: Required<EngineOptions>;
+  opts: ResolvedEngineOptions;
   private ts = 0;
   private rng;
   log: EngineLog = [];
@@ -47,6 +54,7 @@ export class Facsimile {
     this.opts = {
       maxDepth: opts.maxDepth ?? DEFAULT_MAX_DEPTH,
       seed: opts.seed ?? "facsimile",
+      params: opts.params ?? {},
     };
     this.rng = createPRNG(this.opts.seed, 0);
   }
@@ -125,8 +133,9 @@ export class Facsimile {
       const pathSegs = expandRef(stmt.slots[0] as Extract<Slot, { t: "ref" }>, env);
       const verb = stmt.slots[1].segs[0].v;
       if (verb === "set" && stmt.slots.length === 3) {
-        this.mutate(pathSegs, resolved[2]);
-        this.log.push({ kind: "mut", msg: `${pathSegs.join(".")} = ${JSON.stringify(resolved[2])}` });
+        const value = this.resolveMutationValue(stmt.slots[2], env, resolved[2]);
+        this.mutate(pathSegs, value);
+        this.log.push({ kind: "mut", msg: `${pathSegs.join(".")} = ${JSON.stringify(value)}` });
         // Emit as 2-slot property-change event so authors can react with `<path> set { ... }`.
         await this.emit(this.mkEvent([pathSegs.join("."), "set"]), depth + 1);
         return;
@@ -145,6 +154,13 @@ export class Facsimile {
 
     // Otherwise: emit as sub-event.
     await this.emit(this.mkEvent(resolved, event.obs), depth + 1);
+  }
+
+  private resolveMutationValue(slot: Slot, env: Env, value: SerialValue): SerialValue {
+    if (slot.t !== "ref") return value;
+    const segs = expandRef(slot, env);
+    const found = deepGet(this.withBaseEnv(env), segs);
+    return found ?? value;
   }
 
   private async runIf(stmt: FacNode, env: Env, event: FacEvent, depth: number) {
@@ -194,6 +210,7 @@ export class Facsimile {
     if (s.t === "io") {
       const method = this.adapter.methods[s.kind];
       if (!method) throw new Error(`no adapter method for io kind "${s.kind}"`);
+      env.params = this.opts.params;
       const ctx: IOCtx = {
         world: this.world,
         env,
@@ -203,7 +220,7 @@ export class Facsimile {
         evalExpr: (expr: string, extra: Env | null) => this.evalExpr(expr, extra ? { ...env, ...extra } : env),
       };
       const result = await method(ctx);
-      this.log.push({ kind: "io", msg: `<<#${s.kind} ...>> → ${JSON.stringify(result)}` });
+      this.log.push({ kind: "io", msg: `<<${s.kind} ...>> → ${JSON.stringify(result)}` });
       return result;
     }
     return null;
@@ -218,7 +235,7 @@ export class Facsimile {
   }
 
   private evalExprSync(expr: string, env: Env): SerialValue {
-    const vars = { ...this.entityVars(), ...env };
+    const vars = this.withBaseEnv(env);
     const runner = createLoadedRunner(this.rng, vars, {
       has: (arr, v) => Array.isArray(arr) && (arr as SerialValue[]).includes(v),
     });
@@ -236,6 +253,10 @@ export class Facsimile {
 
   private entityVars(): Record<string, SerialValue> {
     return this.world.entities as Record<string, SerialValue>;
+  }
+
+  private withBaseEnv(env: Env): Env {
+    return { ...this.entityVars(), params: this.opts.params, ...env };
   }
 
   // ---------- World mutation ----------

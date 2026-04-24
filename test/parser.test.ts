@@ -89,7 +89,7 @@ assert.match(monetStr, /\{\{randIntBetween\(3, 10\) \+ 1\}\}/);
 const enumH = program.find((n) =>
   n.body?.some((s) => s.slots.some((x) => x.t === "io" && x.kind === "enum")),
 );
-assert.ok(enumH, "expected handler containing <<#enum ...>>");
+assert.ok(enumH, "expected handler containing <<enum ...>>");
 const enumIO = enumH!.body!.flatMap((s) => s.slots).find((x) => x.t === "io" && (x as any).kind === "enum")!;
 assert.match((enumIO as any).raw, /happy\|sad\|angry/);
 

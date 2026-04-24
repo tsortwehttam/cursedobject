@@ -20,7 +20,7 @@ export type FacAdapter = {
   methods: Record<string, IOMethod>;
 };
 
-// Split `<<# kind a ; b ; c >>` raw payload on `;`. Authors escape literal `;` as `\;`.
+// Split `<<kind a ; b ; c>>` raw payload on `;`. Authors escape literal `;` as `\;`.
 // Delegates to ParamsMarshaller for tokenization, so `.pairs`, `.keys`, etc. stay available
 // if callers want richer structure later.
 const ESC_SENTINEL = "";

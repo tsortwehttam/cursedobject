@@ -99,7 +99,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
   const text: IOMethod = async (ctx) => {
     const parts = splitParams(ctx.rawText);
     const [name, ...rest] = parts;
-    if (!name) throw new Error("<<#text>> requires binding name");
+    if (!name) throw new Error("<<text>> requires binding name");
     const prompt = await buildPrompt(rest, ctx, "Generate a concise piece of text for the following:");
     const v = await callText(prompt);
     ctx.env[name] = v;
@@ -109,7 +109,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
   const bool: IOMethod = async (ctx) => {
     const parts = splitParams(ctx.rawText);
     const [name, ...rest] = parts;
-    if (!name) throw new Error("<<#bool>> requires binding name");
+    if (!name) throw new Error("<<bool>> requires binding name");
     const prompt = await buildPrompt(rest, ctx, "Answer strictly true or false.");
     const r = await callJson(prompt, { type: "object", properties: { value: { type: "boolean" } }, required: ["value"] });
     const v = !!r.value;
@@ -120,7 +120,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
   const number: IOMethod = async (ctx) => {
     const parts = splitParams(ctx.rawText);
     const [name, ...rest] = parts;
-    if (!name) throw new Error("<<#number>> requires binding name");
+    if (!name) throw new Error("<<number>> requires binding name");
     const prompt = await buildPrompt(rest, ctx, "Return a single numeric value.");
     const r = await callJson(prompt, { type: "object", properties: { value: { type: "number" } }, required: ["value"] });
     const v = Number(r.value);
@@ -131,7 +131,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
   const enumMethod: IOMethod = async (ctx) => {
     const parts = splitParams(ctx.rawText);
     const [name, optsStr, ...rest] = parts;
-    if (!name || !optsStr) throw new Error("<<#enum>> requires name and options");
+    if (!name || !optsStr) throw new Error("<<enum>> requires name and options");
     const choices = optsStr.split("|").map((s) => s.trim());
     const prompt = await buildPrompt(rest, ctx, `Pick exactly one of: ${choices.join(", ")}.`);
     const r = await callJson(prompt, {

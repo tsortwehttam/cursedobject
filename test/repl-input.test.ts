@@ -19,6 +19,12 @@ assert.deepEqual(parseREPLInput("/look painting"), {
   obs: ["Grace", "Trip"],
 });
 
+assert.deepEqual(parseREPLInput("/listen"), {
+  kind: "event",
+  slots: ["Player", "listen", "Door"],
+  obs: ["Grace", "Trip"],
+});
+
 assert.deepEqual(parseREPLInput("/give drink to trip"), {
   kind: "event",
   slots: ["Player", "giveto", "Trip", "Drink"],
@@ -26,6 +32,7 @@ assert.deepEqual(parseREPLInput("/give drink to trip"), {
 });
 
 assert.deepEqual(parseREPLInput("/events"), { kind: "meta", command: "events" });
+assert.deepEqual(parseREPLInput("/actions"), { kind: "meta", command: "actions" });
 assert.deepEqual(parseREPLInput("/quit"), { kind: "quit" });
 
 console.log("repl-input.test.ts OK");

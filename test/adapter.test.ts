@@ -3,6 +3,7 @@ import { collectEntityContext, parseWithClause, splitParams } from "../eng/Adapt
 import type { FacAdapter } from "../eng/Adapter";
 import { Facsimile, type World } from "../eng/Engine";
 import { parse } from "../eng/Parser";
+import { createREPLAdapter } from "../eng/REPLAdapter";
 
 {
   const clause = parseWithClause('with public.*, clothing.* where location == "LivingRoom"');
@@ -20,9 +21,25 @@ import { parse } from "../eng/Parser";
   });
 }
 
+async function testPrint() {
+  const lines: string[] = [];
+  const adapter = createREPLAdapter((text) => lines.push(text));
+  const method = adapter.methods.print;
+  assert.ok(method);
+  await method({
+    world: { entities: {}, events: [] },
+    env: {},
+    kind: "print",
+    rawText: "color cyan ; Trip: hello",
+    interpolate: (text) => text,
+    evalExpr: async () => null,
+  });
+  assert.deepEqual(lines, ["\u001b[36mTrip: hello\u001b[0m\n"]);
+}
+
 const program = parse(`
   Player inspect {
-    Scene.visible = <<#probe with public.*, clothing.* where location == LivingRoom>>;
+    Scene.visible = <<probe with public.*, clothing.* where location == LivingRoom>>;
   }
 `);
 
@@ -59,6 +76,7 @@ const adapter: FacAdapter = {
 const engine = new Facsimile(world, adapter, program);
 
 async function run() {
+  await testPrint();
   await engine.emit(engine.mkEvent(["Player", "inspect"]));
   assert.deepEqual(world.entities.Scene.visible, {
     entities: {

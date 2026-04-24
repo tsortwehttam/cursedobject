@@ -15,13 +15,13 @@ Goal: let AI-voiced entities see what they can plausibly perceive (nearby entiti
 | 1 | `lib/Relations.ts` | `follow` / `neighbors` / `reachable` / `chain` / `siblings` over any relation prop | done |
 | 2 | `lib/Perceivability.ts` | `publicProjection(entity)` — returns `entity.public ?? {}` | todo |
 | 3 | `eng/Adapter.ts` | `collectScene(world, observerId, { relation, depth })` — observer full + others public-only | todo |
-| 4 | `eng/AIAdapter.ts` | `scene` clause tag in `<<#chat>>` (and variants: `scene via <rel>`, `scene via <rel> depth <n>`) | todo |
+| 4 | `eng/AIAdapter.ts` | `scene` clause tag in `<<chat>>` (and variants: `scene via <rel>`, `scene via <rel> depth <n>`) | todo |
 | 5 | tests | relations ✓ ; perceivability ; scene-adapter ; chat-scene integration | 1/4 |
 
 ## Invocation target
 
 ```
-<<#chat
+<<chat
   as Bob ;
   scene ;                   // defaults: via location, depth 2
   on * sayto Bob ;
@@ -54,4 +54,4 @@ Extension hooks reserved:
 1. ✅ `lib/Relations.ts` + tests
 2. `lib/Perceivability.ts` + tests
 3. `eng/Adapter.ts` → `collectScene` + tests
-4. `eng/AIAdapter.ts` → `scene` clause wired into `<<#chat>>` + integration test
+4. `eng/AIAdapter.ts` → `scene` clause wired into `<<chat>>` + integration test

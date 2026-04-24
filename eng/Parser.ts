@@ -163,7 +163,7 @@ NumSlot
   = n:$("-"? [0-9]+ ("." [0-9]+)?) &WB { return N(Number(n)); }
 
 IOSlot
-  = "<<#" _ kind:Ident _ raw:RawUntilIOClose { return IO(kind, raw); }
+  = "<<" _ kind:Ident _ raw:RawUntilIOClose { return IO(kind, raw); }
 
 // ---------- Raw capture ----------
 

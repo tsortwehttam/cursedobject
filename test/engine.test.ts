@@ -32,7 +32,26 @@ const world: World = {
 };
 const engine = new Facsimile(world, adapter, program);
 
+async function testParams() {
+  const paramProgram = parse(`
+    Player {
+      name = params.playerName;
+      public.name = "{{params.playerName}}";
+    }
+  `);
+  const paramWorld: World = { entities: { Player: {} }, events: [] };
+  const paramEngine = new Facsimile(paramWorld, adapter, paramProgram, {
+    params: { playerName: "Ada" },
+  });
+  await paramEngine.boot();
+  assert.equal(paramWorld.entities.Player?.name, "Ada");
+  const pub = paramWorld.entities.Player?.public;
+  assert.ok(pub && typeof pub === "object" && !Array.isArray(pub));
+  assert.equal(pub.name, "Ada");
+}
+
 async function run() {
+await testParams();
 await engine.boot();
 
 // Verify spawn handlers set traits.
