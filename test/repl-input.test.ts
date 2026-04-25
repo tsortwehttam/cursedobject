@@ -1,38 +1,40 @@
 import assert from "node:assert/strict";
-import { parseREPLInput } from "../eng/REPLInput";
+import { story } from "../fic/facade/adapter";
 
-assert.deepEqual(parseREPLInput("hello Grace"), {
+const parseInput = story.parseInput!;
+
+assert.deepEqual(parseInput("hello Grace"), {
   kind: "event",
-  slots: ["Player", "sayto", "Room", "hello Grace"],
+  slots: ["Player", "sayto", "Apartment", "hello Grace"],
   obs: ["Grace", "Trip"],
 });
 
-assert.deepEqual(parseREPLInput("/say grace I missed you"), {
+assert.deepEqual(parseInput("/say grace I missed you"), {
   kind: "event",
   slots: ["Player", "sayto", "Grace", "I missed you"],
   obs: ["Grace", "Trip"],
 });
 
-assert.deepEqual(parseREPLInput("/look painting"), {
+assert.deepEqual(parseInput("/look painting"), {
   kind: "event",
   slots: ["Player", "lookat", "Painting"],
   obs: ["Grace", "Trip"],
 });
 
-assert.deepEqual(parseREPLInput("/listen"), {
+assert.deepEqual(parseInput("/listen"), {
   kind: "event",
   slots: ["Player", "listen", "Door"],
   obs: ["Grace", "Trip"],
 });
 
-assert.deepEqual(parseREPLInput("/give drink to trip"), {
+assert.deepEqual(parseInput("/give drink to trip"), {
   kind: "event",
   slots: ["Player", "giveto", "Trip", "Drink"],
   obs: ["Grace", "Trip"],
 });
 
-assert.deepEqual(parseREPLInput("/events"), { kind: "meta", command: "events" });
-assert.deepEqual(parseREPLInput("/actions"), { kind: "meta", command: "actions" });
-assert.deepEqual(parseREPLInput("/quit"), { kind: "quit" });
+assert.deepEqual(parseInput("/events"), { kind: "meta", command: "events" });
+assert.deepEqual(parseInput("/actions"), { kind: "meta", command: "actions" });
+assert.deepEqual(parseInput("/quit"), { kind: "quit" });
 
 console.log("repl-input.test.ts OK");

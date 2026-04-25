@@ -91,6 +91,31 @@ All I/O should live in the adapter layer. Examples of I/O:
 - Pathfinding
 - System- and device-level events (mouse position, etc.)
 
+Adapters live in `eng/adapters/` and can be composed with `composeAdapters`. The built-in adapters cover shared runtime concerns such as AI calls, terminal output, and mocks. Story-specific adapters live beside their story files under `fic/<story>/adapter.ts`.
+
+Story files should emit semantic I/O, not presentation instructions. For example, a story should prefer `<<narrate ...>>` or `<<say Trip ; Player ; ...>>` over encoding terminal colors in `.fac` content. The active adapter decides how those outputs should be rendered for a terminal, web UI, native app, or test.
+
+## Stories
+
+Stories live in `fic/`, one subfolder per story:
+
+- `fic/facade/facade.fac`
+- `fic/facade/adapter.ts`
+
+The sibling `adapter.ts` can provide initial entity ids, story params, input parsing, action listing, semantic renderers, and presentation styling. This keeps `.fac` content focused on world state and story behavior while adapters handle environment-specific integration.
+
+Run a story with the generic REPL:
+
+```sh
+npm run facade
+```
+
+or:
+
+```sh
+tsx dev/repl.ts fic/facade/facade.fac
+```
+
 ## Querying
 
 A main component of Facsimily is the query interface. Since Facsimile isn't concerned with UI per say, games will have to implement that. But rather than have Facsimile push updates, instead, Facsimile receives events, updates, ensures consistency, and then exposes all entities properties in an easy-to-query interface so that the UI or other processes can find out the current state of entities in the system, including:

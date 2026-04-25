@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse } from "../eng/Parser";
 import { Facsimile, type World } from "../eng/Engine";
-import { createMockAdapter } from "../eng/MockAdapter";
+import { createMockAdapter } from "../eng/adapters/MockAdapter";
 
-const src = readFileSync(new URL("../game/facade.fac", import.meta.url), "utf8");
+const src = readFileSync(new URL("../fic/facade/facade.fac", import.meta.url), "utf8");
 const program = parse(src);
 
 // Mock AI: deterministic canned responses per io kind.

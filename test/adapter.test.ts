@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { collectEntityContext, parseWithClause, splitParams } from "../eng/Adapter";
-import type { FacAdapter } from "../eng/Adapter";
+import { collectEntityContext, parseWithClause, splitParams } from "../eng/adapters/Adapter";
+import type { FacAdapter } from "../eng/adapters/Adapter";
 import { Facsimile, type World } from "../eng/Engine";
 import { parse } from "../eng/Parser";
-import { createREPLAdapter } from "../eng/REPLAdapter";
+import { createTerminalAdapter } from "../eng/adapters/TerminalAdapter";
 
 {
   const clause = parseWithClause('with public.*, clothing.* where location == "LivingRoom"');
@@ -23,18 +23,18 @@ import { createREPLAdapter } from "../eng/REPLAdapter";
 
 async function testPrint() {
   const lines: string[] = [];
-  const adapter = createREPLAdapter((text) => lines.push(text));
-  const method = adapter.methods.print;
+  const adapter = createTerminalAdapter({ write: (text) => lines.push(text), style: () => "gray" });
+  const method = adapter.methods.narrate;
   assert.ok(method);
   await method({
     world: { entities: {}, events: [] },
     env: {},
-    kind: "print",
-    rawText: "color cyan ; Trip: hello",
+    kind: "narrate",
+    rawText: "Trip: hello",
     interpolate: (text) => text,
     evalExpr: async () => null,
   });
-  assert.deepEqual(lines, ["\u001b[36mTrip: hello\u001b[0m\n"]);
+  assert.deepEqual(lines, ["\u001b[90mTrip: hello\u001b[0m\n"]);
 }
 
 const program = parse(`

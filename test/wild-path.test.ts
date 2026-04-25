@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { parse } from "../eng/Parser";
 import { Facsimile, type World } from "../eng/Engine";
-import { createMockAdapter } from "../eng/MockAdapter";
+import { createMockAdapter } from "../eng/adapters/MockAdapter";
 
 const adapter = createMockAdapter(() => null);
 

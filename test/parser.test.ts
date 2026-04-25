@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { parse } from "../eng/Parser";
 import type { FacNode, Slot } from "../eng/AST";
 
-const src = readFileSync(new URL("../game/example.fac", import.meta.url), "utf8");
+const src = readFileSync(new URL("../fic/example/example.fac", import.meta.url), "utf8");
 const program = parse(src);
 
 assert.ok(Array.isArray(program));

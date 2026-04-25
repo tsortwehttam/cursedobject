@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "ts": "tsx --",
-    "facade": "tsx dev/facade-repl.ts",
+    "facade": "tsx dev/repl.ts fic/facade/facade.fac",
     "typecheck": "tsc --noEmit",
     "test": "for f in $(find . -name '*.test.ts' -not -path '*/node_modules/*' -not -path './.next/*' | sort); do echo \"Running $f\"; tsx \"$f\" || exit 1; done",
     "verify": "npm run typecheck && npm test"
@@ -13,6 +13,7 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.5.2",
+    "@types/yargs": "^17.0.35",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
@@ -27,6 +28,7 @@
     "openai": "^6.34.0",
     "peggy": "^5.1.0",
     "tiktoken": "^1.0.22",
+    "yargs": "^18.0.0",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.25.2"
   }

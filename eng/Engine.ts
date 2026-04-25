@@ -5,7 +5,7 @@ import { createPRNG } from "../lib/RandHelpers";
 import { createLoadedRunner } from "../lib/ScriptEvaluator";
 import { deepGet, deepSet } from "../lib/PathHelpers";
 import { parseRegexLiteral } from "../lib/RegexHelpers";
-import type { FacAdapter, IOCtx } from "./Adapter";
+import type { FacAdapter, IOCtx } from "./adapters/Adapter";
 import { parseVariation } from "./Parsing";
 
 export type EntityData = Record<string, SerialValue>;

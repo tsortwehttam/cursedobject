@@ -1,12 +1,12 @@
 import OpenAI from "openai";
-import { NonEmpty, SerialValue } from "../lib/CoreTypings";
+import { NonEmpty, SerialValue } from "../../lib/CoreTypings";
 import type { FacAdapter, IOCtx, IOMethod } from "./Adapter";
 import { collectContext, collectEntityContext, nonContextParts, splitParams } from "./Adapter";
-import { parseClauses } from "./Clauses";
-import { selectEvents } from "./Query";
-import { resolveWildcardPath, wildcardMatchesToMap } from "../lib/WildcardPath";
-import { DEFAULT_LLM_SLUGS, LLMSlug } from "../lib/LLMTypes";
-import { generateJson, generateText } from "../lib/OpenRouterUtils";
+import { parseClauses } from "../Clauses";
+import { selectEvents } from "../Query";
+import { resolveWildcardPath, wildcardMatchesToMap } from "../../lib/WildcardPath";
+import { DEFAULT_LLM_SLUGS, LLMSlug } from "../../lib/LLMTypes";
+import { generateJson, generateText } from "../../lib/OpenRouterUtils";
 
 export type AIAdapterOptions = {
   openai?: OpenAI;
@@ -21,7 +21,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
   const openai =
     opts.openai ??
     new OpenAI({
-      apiKey: opts.apiKey ?? process.env.OPENROUTER_API_KEY,
+      apiKey: opts.apiKey ?? process.env.OPENROUTER_API_KEY ?? "missing",
       baseURL: opts.baseURL ?? DEFAULT_BASE_URL,
     });
   const models = opts.models ?? (DEFAULT_LLM_SLUGS as NonEmpty<LLMSlug>);

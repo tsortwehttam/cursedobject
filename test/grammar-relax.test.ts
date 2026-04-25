@@ -133,7 +133,7 @@ Trip spawn {
   assert.match(raw, /\n/, "raw should span lines");
 
   // splitParams yields three trimmed clauses, no quoting needed.
-  const { splitParams } = require("../eng/Adapter");
+  const { splitParams } = require("../eng/adapters/Adapter");
   const parts = splitParams(raw);
   assert.equal(parts.length, 3, `expected 3 clauses, got ${parts.length}: ${JSON.stringify(parts)}`);
   assert.equal(parts[0], "as Trip");

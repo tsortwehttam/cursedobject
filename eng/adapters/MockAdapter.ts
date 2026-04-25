@@ -1,6 +1,6 @@
 import type { FacAdapter, IOCtx } from "./Adapter";
 import { collectContext, nonContextParts, splitParams } from "./Adapter";
-import { SerialValue } from "../lib/CoreTypings";
+import { SerialValue } from "../../lib/CoreTypings";
 
 export type MockResponder = (kind: string, parts: string[], ctx: IOCtx) => SerialValue | Promise<SerialValue>;
 
@@ -19,7 +19,7 @@ export function createMockAdapter(responder: MockResponder): FacAdapter {
   }
 
   const methods: Record<string, typeof dispatch> = {};
-  for (const k of ["chat", "text", "bool", "number", "enum", "match", "JSON", "canSee", "pathTo", "print", "mark"]) {
+  for (const k of ["chat", "text", "bool", "number", "enum", "match", "JSON", "canSee", "pathTo", "print", "narrate", "say", "mark"]) {
     methods[k] = dispatch;
   }
   return { methods };

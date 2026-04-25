@@ -1,9 +1,9 @@
-import type { SerialValue } from "../lib/CoreTypings";
-import type { Env, World } from "./Engine";
-import { deepSet } from "../lib/PathHelpers";
-import { parseContextClause } from "./Parsing";
-import { resolveWildcardPath, wildcardMatchesToMap } from "../lib/WildcardPath";
-import { marshallParams } from "../lib/ParamsMarshaller";
+import type { SerialValue } from "../../lib/CoreTypings";
+import type { Env, World } from "../Engine";
+import { deepSet } from "../../lib/PathHelpers";
+import { parseContextClause } from "../Parsing";
+import { resolveWildcardPath, wildcardMatchesToMap } from "../../lib/WildcardPath";
+import { marshallParams } from "../../lib/ParamsMarshaller";
 
 export type IOCtx = {
   world: World;
@@ -19,6 +19,12 @@ export type IOMethod = (ctx: IOCtx) => Promise<SerialValue>;
 export type FacAdapter = {
   methods: Record<string, IOMethod>;
 };
+
+export function composeAdapters(...adapters: FacAdapter[]): FacAdapter {
+  return {
+    methods: Object.assign({}, ...adapters.map((adapter) => adapter.methods)),
+  };
+}
 
 // Split `<<kind a ; b ; c>>` raw payload on `;`. Authors escape literal `;` as `\;`.
 // Delegates to ParamsMarshaller for tokenization, so `.pairs`, `.keys`, etc. stay available

@@ -7,7 +7,7 @@ import {
   applyCounterVerb,
   type World,
 } from "../eng/Engine";
-import { createMockAdapter } from "../eng/MockAdapter";
+import { createMockAdapter } from "../eng/adapters/MockAdapter";
 
 // ---------- Pure unit tests ----------
 
