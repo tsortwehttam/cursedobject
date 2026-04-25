@@ -50,8 +50,37 @@ async function testParams() {
   assert.equal(pub.name, "Ada");
 }
 
+async function testJsonSlots() {
+  const jsonProgram = parse(`
+    Player spawn {
+      Player.tags = ["bar", "baz"];
+      Player.profile = {
+        mood: "tense",
+        knows: ["Trip", "Grace"],
+      };
+    }
+
+    Player send {
+      Scene.last = ["one", {two: 2}];
+      Scene sayto Player {body: "hello", tags: ["warm"]};
+    }
+  `);
+  const jsonWorld: World = { entities: { Player: {}, Scene: {} }, events: [] };
+  const jsonEngine = new Facsimile(jsonWorld, adapter, jsonProgram);
+  await jsonEngine.boot();
+  assert.deepEqual(jsonWorld.entities.Player?.tags, ["bar", "baz"]);
+  assert.deepEqual(jsonWorld.entities.Player?.profile, {
+    mood: "tense",
+    knows: ["Trip", "Grace"],
+  });
+  await jsonEngine.emit(jsonEngine.mkEvent(["Player", "send"]));
+  assert.deepEqual(jsonWorld.entities.Scene?.last, ["one", { two: 2 }]);
+  assert.deepEqual(jsonWorld.events.at(-1)?.slots, ["Scene", "sayto", "Player", { body: "hello", tags: ["warm"] }]);
+}
+
 async function run() {
 await testParams();
+await testJsonSlots();
 await engine.boot();
 
 // Verify spawn handlers set traits.

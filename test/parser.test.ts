@@ -151,4 +151,23 @@ assert.ok(sw, "expected switch in else-branch");
 const cases = sw!.body!;
 assert.ok(cases.length >= 3);
 
+// 10. JSON5 literals in slot position
+const jsonProgram = parse(`
+  Scene.tags = ["bar", "baz",];
+  Scene.profile = {
+    mood: "tense",
+    knows: ["Trip", "Grace"],
+  };
+  Player show ["one", {two: 2}] {}
+`);
+assert.equal(jsonProgram[0].slots[2].t, "json");
+assert.deepEqual((jsonProgram[0].slots[2] as any).v, ["bar", "baz"]);
+assert.equal(jsonProgram[1].slots[2].t, "json");
+assert.deepEqual((jsonProgram[1].slots[2] as any).v, {
+  mood: "tense",
+  knows: ["Trip", "Grace"],
+});
+assert.equal(jsonProgram[2].slots[2].t, "json");
+assert.deepEqual((jsonProgram[2].slots[2] as any).v, ["one", { two: 2 }]);
+
 console.log(`parser.test.ts OK — ${program.length} top-level handlers parsed`);

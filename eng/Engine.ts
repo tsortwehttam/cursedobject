@@ -260,6 +260,7 @@ export class Facsimile {
   private async resolveSlot(s: Slot, env: Env): Promise<SerialValue> {
     if (s.t === "num") return s.v;
     if (s.t === "str") return this.interpolate(s.v, env);
+    if (s.t === "json") return s.v;
     if (s.t === "regex") return `/${s.v}/${s.flags}`;
     if (s.t === "ref") return expandRef(s, env).join(".");
     if (s.t === "cond") return s.raw;

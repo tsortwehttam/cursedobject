@@ -72,13 +72,6 @@ The through-line is that these games rely on:
 - Let the same world run with different renderers and input systems.
 - Prefer explicit data and composable primitives over special-case engine features.
 
-As we begin implementation, please note the code we already have in:
-
-- `lib/ParamsMarshaller.ts`
-- `lib/TemplateHelpers.ts`
-- `lib/ScriptEvaluator.ts`
-- `lib/TokenizerLexer.ts`
-
 ## I/O Adapter
 
 All I/O should live in the adapter layer. Examples of I/O:
@@ -95,26 +88,18 @@ Adapters live in `eng/adapters/` and can be composed with `composeAdapters`. The
 
 Story files should emit semantic events and I/O, not presentation instructions. For example, a story should prefer `Trip sayto Player "hello"` or `<<narrate ...>>` over encoding terminal colors in `.fac` content. The active adapter can listen to emitted events and expose I/O methods, deciding how outputs should be rendered for a terminal, web UI, native app, or test.
 
-## Stories
+Facsimile supports static JSON5 array and object literals in slot values. This is useful for authored traits and structured events:
 
-Stories live in `fic/`, one subfolder per story:
-
-- `fic/facade/facade.fac`
-- `fic/facade/adapter.ts`
-
-The sibling `adapter.ts` can provide initial entity ids, story params, input parsing, action listing, semantic renderers, and presentation styling. This keeps `.fac` content focused on world state and story behavior while adapters handle environment-specific integration.
-
-Run a story with the generic REPL:
-
-```sh
-npm run facade
+```fac
+Player.tags = ["artist", "hostile"];
+Player.profile = {
+  mood: "tense",
+  knows: ["Grace", "Trip"],
+};
+Scene record {kind: "beat", topic: "art"};
 ```
 
-or:
-
-```sh
-tsx dev/repl.ts fic/facade/facade.fac
-```
+JSON5 literals are parsed as data, so interpolation inside them is not evaluated. Object literals used as final event slots should end the statement with `;` so they are not ambiguous with block bodies.
 
 ## Querying
 

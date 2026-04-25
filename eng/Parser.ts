@@ -1,10 +1,12 @@
 import peggy from "peggy";
+import JSON5 from "json5";
 import type { FacNode, FacProgram, RefSeg, Slot } from "./AST";
 
 const GRAMMAR = String.raw`
 {{
   const R  = (segs) => ({ t: "ref", segs });
   const S  = (v)    => ({ t: "str", v });
+  const J  = (raw)  => ({ t: "json", raw });
   const Rx = (v, f) => ({ t: "regex", v, flags: f });
   const N  = (v)    => ({ t: "num", v });
   const IO = (kind, raw) => ({ t: "io",   kind, raw: raw.trim() });
@@ -119,6 +121,7 @@ DefaultClause
 Slot
   = RestMarker
   / IOSlot
+  / JsonSlot
   / StrSlot
   / RegexSlot
   / NumSlot
@@ -190,6 +193,50 @@ NumSlot
 IOSlot
   = "<<" _ kind:Ident _ raw:RawUntilIOClose { return IO(kind, raw); }
 
+JsonSlot
+  = raw:JsonObjectLiteral { return J(raw); }
+  / raw:JsonArrayLiteral { return J(raw); }
+
+JsonObjectLiteral
+  = raw:$(JsonObject) &(_inl ";") { return raw; }
+
+JsonArrayLiteral
+  = $(JsonArray)
+
+JsonObject
+  = "{" JsonWS* (JsonMember (JsonWS* "," JsonWS* JsonMember)* JsonWS* ","?)? JsonWS* "}"
+
+JsonArray
+  = "[" JsonWS* (JsonValue (JsonWS* "," JsonWS* JsonValue)* JsonWS* ","?)? JsonWS* "]"
+
+JsonMember
+  = JsonKey JsonWS* ":" JsonWS* JsonValue
+
+JsonKey
+  = JsonString
+  / [A-Za-z_$] [A-Za-z0-9_$]*
+
+JsonValue
+  = JsonObject
+  / JsonArray
+  / JsonString
+  / JsonPrimitive
+
+JsonPrimitive
+  = ("+" / "-")? [A-Za-z0-9_.]+
+
+JsonString
+  = "\"" (("\\" .) / [^"\\])* "\""
+  / "'" (("\\" .) / [^'\\])* "'"
+
+JsonWS
+  = [ \t\r\n]
+  / JsonComment
+
+JsonComment
+  = "//" [^\n]*
+  / "/*" (!"*/" .)* "*/"
+
 // ---------- Raw capture ----------
 
 RawUntilIOClose  = s:$((!">>" .)*) ">>"  { return s; }
@@ -226,7 +273,26 @@ export function parsePattern(pattern: string): import("./AST").FacNode {
 }
 
 export function parse(source: string): FacProgram {
-  return expandWithBlocks(getParser().parse(source) as FacProgram);
+  return expandWithBlocks(parseJsonSlots(getParser().parse(source) as FacProgram));
+}
+
+function parseJsonSlots(nodes: FacNode[]): FacNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    slots: node.slots.map(parseJsonSlot),
+    body: node.body ? parseJsonSlots(node.body) : node.body,
+  }));
+}
+
+function parseJsonSlot(slot: Slot): Slot {
+  if (slot.t !== "json") return slot;
+  const raw = (slot as unknown as { raw: string }).raw;
+  try {
+    return { t: "json", v: JSON5.parse(raw) };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`invalid JSON5 literal ${raw}: ${msg}`);
+  }
 }
 
 function expandWithBlocks(nodes: FacNode[], prefix: RefSeg[] = []): FacNode[] {
