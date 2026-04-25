@@ -102,6 +102,9 @@ export class Facsimile {
     }
     this.world.events.push(event);
     this.log.push({ kind: "event", msg: event.slots.map(String).join(" ") });
+    for (const listen of this.adapter.events) {
+      await listen({ world: this.world, event });
+    }
 
     for (const handler of this.program) {
       const env = matchHandler(handler, event);

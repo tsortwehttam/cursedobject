@@ -1,5 +1,5 @@
 import type { SerialValue } from "../../lib/CoreTypings";
-import type { Env, World } from "../Engine";
+import type { Env, FacEvent, World } from "../Engine";
 import { deepSet } from "../../lib/PathHelpers";
 import { parseContextClause } from "../Parsing";
 import { resolveWildcardPath, wildcardMatchesToMap } from "../../lib/WildcardPath";
@@ -16,13 +16,22 @@ export type IOCtx = {
 
 export type IOMethod = (ctx: IOCtx) => Promise<SerialValue>;
 
+export type EventCtx = {
+  world: World;
+  event: FacEvent;
+};
+
+export type EventMethod = (ctx: EventCtx) => Promise<void>;
+
 export type FacAdapter = {
   methods: Record<string, IOMethod>;
+  events: EventMethod[];
 };
 
 export function composeAdapters(...adapters: FacAdapter[]): FacAdapter {
   return {
     methods: Object.assign({}, ...adapters.map((adapter) => adapter.methods)),
+    events: adapters.flatMap((adapter) => adapter.events),
   };
 }
 

@@ -1,92 +1,28 @@
 import type { SerialValue } from "../../lib/CoreTypings";
-import { splitParams, type FacAdapter, type IOCtx, type IOMethod } from "../../eng/adapters/Adapter";
+import { type EventMethod, type FacAdapter } from "../../eng/adapters/Adapter";
 import { labelFor, type FacStoryAdapter, type ParsedREPLInput, type StoryIO } from "../../eng/adapters/StoryAdapter";
 import type { EntityData, Facsimile } from "../../eng/Engine";
 import { queryActions } from "../../eng/Query";
 
-const IDS = [
-  "Apartment",
-  "BarCart",
-  "Couch",
-  "Door",
-  "Grace",
-  "ItalyPhoto",
-  "Painting",
-  "Player",
-  "Room",
-  "Scene",
-  "Sculpture",
-  "Stereo",
-  "Trip",
-  "Vase",
-  "WeddingPhoto",
-];
-
-const OBS = ["Grace", "Trip"];
-
-const TARGETS: Record<string, string> = {
-  apartment: "Apartment",
-  bar: "BarCart",
-  cart: "BarCart",
-  couch: "Couch",
-  coucharea: "Couch",
-  conversation: "Apartment",
-  door: "Door",
-  drink: "Drink",
-  grace: "Grace",
-  painting: "Painting",
-  photo: "ItalyPhoto",
-  picture: "ItalyPhoto",
-  room: "Apartment",
-  sculpture: "Sculpture",
-  stereo: "Stereo",
-  trip: "Trip",
-  vase: "Vase",
-  wedding: "WeddingPhoto",
-};
-
-const ACTION_VERBS: Record<string, string> = {
-  drop: "drop",
+const META = new Set(["state", "log", "events", "help", "actions"]);
+const HIDDEN = new Set(["unknown", "sayto"]);
+const VERBS: Record<string, string> = {
   give: "giveto",
-  hit: "hit",
-  hug: "hug",
-  kiss: "kiss",
-  knock: "knock",
-  listen: "listen",
   look: "lookat",
-  move: "move",
-  pickup: "pickup",
-  push: "push",
-  slap: "slap",
-  touch: "touch",
-  use: "use",
+  pick: "pickup",
 };
-
-const COMMANDS: Record<string, string> = {
-  drop: "drop",
+const DISPLAY: Record<string, string> = {
   giveto: "give",
-  hit: "hit",
-  hug: "hug",
-  kiss: "kiss",
-  knock: "knock",
-  listen: "listen",
   lookat: "look",
   pickup: "pick up",
-  push: "push",
-  slap: "slap",
-  touch: "touch",
-  use: "use",
 };
-
-const HIDDEN = new Set(["unknown", "sayto"]);
-const PEOPLE = new Set(["Grace", "Trip"]);
 const COLORS: Record<string, string> = {
   Grace: "magenta",
   Trip: "cyan",
 };
 
 export const story: FacStoryAdapter = {
-  ids: IDS,
+  ids: [],
   params: async (io) => {
     const answer = (await io.ask("What is your name? ")).trim();
     return { playerName: answer.length > 0 ? answer : "Player" };
@@ -103,59 +39,51 @@ export default story;
 function createFacadeAdapter(io: StoryIO): FacAdapter {
   const line = (text: string) => io.write(text.endsWith("\n") ? text : `${text}\n`);
 
-  const say: IOMethod = async (ctx: IOCtx): Promise<SerialValue> => {
-    const [speaker, target, body] = splitParams(ctx.rawText).map(ctx.interpolate);
+  const onSayto: EventMethod = async ({ event }) => {
+    const [speaker, verb, target, body] = event.slots;
+    if (verb !== "sayto" || body == null) return;
     const suffix = target && target !== "Player" ? ` (to ${target})` : "";
-    const text = `${speaker ?? "Someone"}${suffix}: ${body ?? ""}`;
-    line(colorize(text, COLORS[speaker ?? ""] ?? null));
-    return body ?? "";
+    const text = `${String(speaker ?? "Someone")}${suffix}: ${String(body)}`;
+    line(colorize(text, COLORS[String(speaker ?? "")] ?? null));
   };
 
-  return { methods: { say } };
+  return { methods: {}, events: [onSayto] };
 }
 
-function parseInput(raw: string): ParsedREPLInput {
+async function parseInput(raw: string, engine: Facsimile): Promise<ParsedREPLInput> {
   const line = raw.trim();
   if (!line) return { kind: "empty" };
   const lower = line.toLowerCase();
-  if (lower === "quit" || lower === "exit" || lower === "/quit" || lower === "/exit") {
-    return { kind: "quit" };
-  }
-  if (line[0] !== "/") return sayInput(line);
+  if (["quit", "exit", "/quit", "/exit"].includes(lower)) return { kind: "quit" };
+  if (line[0] !== "/") return sayInput(engine, line, currentLocation(engine));
 
   const [cmd, ...rest] = line.slice(1).split(/\s+/);
   const command = cmd.toLowerCase();
   const body = rest.join(" ").trim();
-  if (["state", "log", "events", "help", "actions"].includes(command)) {
-    return { kind: "meta", command };
-  }
+  if (META.has(command)) return { kind: "meta", command };
   if (command === "say") {
     const [target, ...words] = rest;
-    return sayInput(words.join(" ").trim(), resolveTarget(target));
+    return sayInput(engine, words.join(" ").trim(), resolveTarget(engine, target, currentLocation(engine)));
   }
 
-  const verb = ACTION_VERBS[command];
-  if (!verb) return { kind: "event", slots: ["Player", "unknown", command, body], obs: OBS };
-  if (command === "move") return { kind: "event", slots: ["Player", verb, resolveTarget(body || "Apartment")], obs: OBS };
-  if (command === "listen") return { kind: "event", slots: ["Player", verb, resolveTarget(body || "Door")], obs: OBS };
-  if (command === "give") {
-    const [thing, target] = parseGive(body);
-    return { kind: "event", slots: ["Player", verb, resolveTarget(target), resolveTarget(thing)], obs: OBS };
+  const verb = VERBS[command] ?? command;
+  if (verb === "move") return actionInput(engine, verb, resolveTarget(engine, body, "Apartment"));
+  if (verb === "listen") return actionInput(engine, verb, await resolveActionTarget(engine, verb, body));
+  if (verb === "giveto") {
+    const [thing, target] = parseGive(body, heldItem(engine));
+    return actionInput(engine, verb, resolveTarget(engine, target, null), resolveTarget(engine, thing, null));
   }
-  return { kind: "event", slots: ["Player", verb, resolveTarget(body || command)], obs: OBS };
+  return actionInput(engine, verb, await resolveActionTarget(engine, verb, body || command));
 }
 
 async function listActions(engine: Facsimile): Promise<string[]> {
-  const player = engine.world.entities.Player ?? {};
-  const here = typeof player.location === "string" ? player.location : null;
-  const held = typeof player.holding === "string" && player.holding !== "nothing" ? player.holding : null;
-  const targets = listTargets(engine, here);
+  const held = heldItem(engine);
   const lines = new Set<string>();
 
-  for (const target of targets) {
-    const matches = await queryActions(engine, { actor: "Player", target, value: null, obs: OBS });
+  for (const target of visibleTargets(engine)) {
+    const matches = await queryActions(engine, { actor: "Player", target, value: null, obs: observers(engine) });
     for (const match of matches) {
-      const line = formatAction(match.verb, target, engine.world.entities[target] ?? {}, held);
+      const line = formatAction(engine, match.verb, target, held);
       if (line) lines.add(line);
     }
   }
@@ -164,43 +92,98 @@ async function listActions(engine: Facsimile): Promise<string[]> {
   return [...lines].sort();
 }
 
-function sayInput(text: string, target = "Apartment"): ParsedREPLInput {
-  return { kind: "event", slots: ["Player", "sayto", target, text], obs: OBS };
+function sayInput(engine: Facsimile, text: string, target: string): ParsedREPLInput {
+  return { kind: "event", slots: ["Player", "sayto", target, text], obs: observers(engine) };
 }
 
-function parseGive(body: string): [thing: string, target: string] {
+function actionInput(engine: Facsimile, verb: string, target: string, value: string | null = null): ParsedREPLInput {
+  const slots = value === null ? ["Player", verb, target] : ["Player", verb, target, value];
+  return { kind: "event", slots, obs: observers(engine) };
+}
+
+async function resolveActionTarget(engine: Facsimile, verb: string, body: string): Promise<string> {
+  if (body.length > 0 && body !== verb) return resolveTarget(engine, body, null);
+  const targets = visibleTargets(engine);
+  for (const target of targets) {
+    const matches = await queryActions(engine, { actor: "Player", target, value: null, obs: observers(engine) });
+    if (matches.some((match) => match.verb === verb)) return target;
+  }
+  return currentLocation(engine);
+}
+
+function resolveTarget(engine: Facsimile, text: string | undefined, fallback: string | null): string {
+  const key = normalize(text ?? "");
+  if (!key) return fallback ?? "";
+  for (const [id, ent] of Object.entries(engine.world.entities)) {
+    if (targetKeys(id, ent).some((item) => normalize(item) === key)) return id;
+  }
+  return text ?? fallback ?? "";
+}
+
+function visibleTargets(engine: Facsimile): string[] {
+  const here = currentLocation(engine);
+  return Object.entries(engine.world.entities)
+    .filter(([id, ent]) => id !== "Player" && id !== "Scene" && ent.location === here)
+    .map(([id]) => id);
+}
+
+function observers(engine: Facsimile): string[] {
+  const here = currentLocation(engine);
+  return Object.entries(engine.world.entities)
+    .filter(([id, ent]) => id !== "Player" && ent.kind === "character" && ent.location === here)
+    .map(([id]) => id);
+}
+
+function currentLocation(engine: Facsimile): string {
+  const loc = engine.world.entities.Player?.location;
+  return typeof loc === "string" ? loc : "Apartment";
+}
+
+function heldItem(engine: Facsimile): string | null {
+  const held = engine.world.entities.Player?.holding;
+  return typeof held === "string" && held !== "nothing" ? held : null;
+}
+
+function formatAction(engine: Facsimile, verb: string, target: string, held: string | null): string | null {
+  if (HIDDEN.has(verb)) return null;
+  const ent = engine.world.entities[target] ?? {};
+  if (verb === "pickup" && isPerson(ent)) return null;
+  if (verb === "drop") return null;
+  if (verb === "giveto") {
+    return held && isPerson(ent) ? `/give ${labelFor(held, {})} to ${labelFor(target, ent)}` : null;
+  }
+  if (["hit", "slap", "push", "hug", "kiss"].includes(verb) && !isPerson(ent)) return null;
+  if (verb === "use" && isPerson(ent)) return null;
+  return `/${DISPLAY[verb] ?? verb} ${labelFor(target, ent)}`;
+}
+
+function parseGive(body: string, held: string | null): [thing: string, target: string] {
   const match = body.match(/^(.+?)\s+(?:to\s+)?(\S+)$/);
-  if (!match) return [body || "Drink", "Trip"];
+  if (!match) return [body || held || "", ""];
   return [match[1], match[2]];
 }
 
-function resolveTarget(text: string | undefined): string {
-  const key = (text ?? "").replace(/\s+/g, "").toLowerCase();
-  return TARGETS[key] ?? (text && text.length > 0 ? text : "Apartment");
-}
-
-function listTargets(engine: Facsimile, location: string | null): string[] {
-  const out: string[] = [];
-  for (const [id, ent] of Object.entries(engine.world.entities)) {
-    if (id === "Player" || id === "Scene") continue;
-    if (!location || ent.location === location) out.push(id);
+function targetKeys(id: string, ent: EntityData): string[] {
+  const keys = [id];
+  const pub = ent.public;
+  if (!pub || typeof pub !== "object" || Array.isArray(pub)) return keys;
+  const rec = pub as Record<string, SerialValue>;
+  if (typeof rec.name === "string") keys.push(rec.name);
+  if (typeof rec.aliases === "string") keys.push(...rec.aliases.split("|"));
+  if (Array.isArray(rec.aliases)) {
+    for (const alias of rec.aliases) {
+      if (typeof alias === "string") keys.push(alias);
+    }
   }
-  return out;
+  return keys;
 }
 
-function formatAction(verb: string, target: string, ent: EntityData, held: string | null): string | null {
-  if (HIDDEN.has(verb)) return null;
-  const command = COMMANDS[verb];
-  if (!command) return null;
-  if (verb === "pickup" && PEOPLE.has(target)) return null;
-  if (verb === "drop") return null;
-  if (verb === "giveto") return held && PEOPLE.has(target) ? `/give ${labelFor(held, {})} to ${labelFor(target, ent)}` : null;
-  if ((verb === "hit" || verb === "slap" || verb === "push") && !PEOPLE.has(target)) return null;
-  if ((verb === "hug" || verb === "kiss") && !PEOPLE.has(target)) return null;
-  if (verb === "use" && PEOPLE.has(target)) return null;
-  if (verb === "listen" && target !== "Door" && target !== "Apartment") return null;
-  if (verb === "knock" && target !== "Door") return null;
-  return `/${command} ${labelFor(target, ent)}`;
+function isPerson(ent: EntityData): boolean {
+  return ent.kind === "character";
+}
+
+function normalize(text: string): string {
+  return text.replace(/\s+/g, "").toLowerCase();
 }
 
 function colorize(text: string, color: string | null): string {

@@ -47,7 +47,7 @@ async function main() {
   const adapter = composeAdapters(
     createAIAdapter(),
     createTerminalAdapter({ write: io.write, style: story.style }),
-    story.createAdapter ? story.createAdapter(io) : { methods: {} },
+    story.createAdapter ? story.createAdapter(io) : { methods: {}, events: [] },
   );
   const engine = new Facsimile(world, adapter, program, { params });
 
@@ -57,7 +57,7 @@ async function main() {
   output.write("Commands: /state, /events, /log, /actions, /help, /quit.\n\n> ");
 
   for await (const raw of rl) {
-    const parsed = (story.parseInput ?? parseDefaultInput)(raw);
+    const parsed = await (story.parseInput ?? parseDefaultInput)(raw, engine);
     if (parsed.kind === "empty") {
       output.write("> ");
       continue;
@@ -86,7 +86,7 @@ async function loadStoryAdapter(path: string): Promise<FacStoryAdapter> {
   return mod.story ?? mod.default ?? EMPTY_STORY_ADAPTER;
 }
 
-function parseDefaultInput(raw: string): ParsedREPLInput {
+async function parseDefaultInput(raw: string): Promise<ParsedREPLInput> {
   const line = raw.trim();
   if (!line) return { kind: "empty" };
   if (["quit", "exit", "/quit", "/exit"].includes(line.toLowerCase())) return { kind: "quit" };

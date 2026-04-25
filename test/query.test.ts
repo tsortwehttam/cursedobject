@@ -146,7 +146,7 @@ async function runActionQueryTests() {
       },
       events: [],
     };
-    const engine = new Facsimile(actionWorld, { methods: {} }, program);
+    const engine = new Facsimile(actionWorld, { methods: {}, events: [] }, program);
 
     const r = await queryActions(engine, query);
     assert.deepEqual(
@@ -166,7 +166,7 @@ async function runActionQueryTests() {
       entities: { John: {}, Bill: {} },
       events: [],
     };
-    const engine = new Facsimile(actionWorld, { methods: {} }, program);
+    const engine = new Facsimile(actionWorld, { methods: {}, events: [] }, program);
 
     const r = await queryActions(engine, {
       actor: "John",

@@ -93,7 +93,7 @@ All I/O should live in the adapter layer. Examples of I/O:
 
 Adapters live in `eng/adapters/` and can be composed with `composeAdapters`. The built-in adapters cover shared runtime concerns such as AI calls, terminal output, and mocks. Story-specific adapters live beside their story files under `fic/<story>/adapter.ts`.
 
-Story files should emit semantic I/O, not presentation instructions. For example, a story should prefer `<<narrate ...>>` or `<<say Trip ; Player ; ...>>` over encoding terminal colors in `.fac` content. The active adapter decides how those outputs should be rendered for a terminal, web UI, native app, or test.
+Story files should emit semantic events and I/O, not presentation instructions. For example, a story should prefer `Trip sayto Player "hello"` or `<<narrate ...>>` over encoding terminal colors in `.fac` content. The active adapter can listen to emitted events and expose I/O methods, deciding how outputs should be rendered for a terminal, web UI, native app, or test.
 
 ## Stories
 

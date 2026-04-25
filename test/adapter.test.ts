@@ -37,6 +37,27 @@ async function testPrint() {
   assert.deepEqual(lines, ["\u001b[90mTrip: hello\u001b[0m\n"]);
 }
 
+async function testEventListener() {
+  const seen: string[] = [];
+  const program = parse(`
+    Player inspect {
+      Scene.count incr;
+    }
+  `);
+  const world: World = { entities: { Player: {}, Scene: {} }, events: [] };
+  const adapter: FacAdapter = {
+    methods: {},
+    events: [
+      async ({ event }) => {
+        seen.push(event.slots.map(String).join(" "));
+      },
+    ],
+  };
+  const engine = new Facsimile(world, adapter, program);
+  await engine.emit(engine.mkEvent(["Player", "inspect"]));
+  assert.deepEqual(seen, ["Player inspect", "Scene.count incr"]);
+}
+
 const program = parse(`
   Player inspect {
     Scene.visible = <<probe with public.*, clothing.* where location == Player.location>>;
@@ -68,6 +89,7 @@ const world: World = {
 };
 
 const adapter: FacAdapter = {
+  events: [],
   methods: {
     probe: async (ctx) => collectEntityContext(splitParams(ctx.rawText), ctx),
   },
@@ -77,6 +99,7 @@ const engine = new Facsimile(world, adapter, program);
 
 async function run() {
   await testPrint();
+  await testEventListener();
   await engine.emit(engine.mkEvent(["Player", "inspect"]));
   assert.deepEqual(world.entities.Scene.visible, {
     entities: {

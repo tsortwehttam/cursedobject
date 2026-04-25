@@ -35,7 +35,7 @@ export function createTerminalAdapter(opts: TerminalAdapterOptions): FacAdapter 
     return null;
   };
 
-  return { methods: { print, narrate, mark } };
+  return { methods: { print, narrate, mark }, events: [] };
 }
 
 function colorize(text: string, color: string | null): string {

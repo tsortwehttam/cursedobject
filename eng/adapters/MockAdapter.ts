@@ -22,7 +22,7 @@ export function createMockAdapter(responder: MockResponder): FacAdapter {
   for (const k of ["chat", "text", "bool", "number", "enum", "match", "JSON", "canSee", "pathTo", "print", "narrate", "say", "mark"]) {
     methods[k] = dispatch;
   }
-  return { methods };
+  return { methods, events: [] };
 }
 
 export { collectContext, nonContextParts, splitParams };

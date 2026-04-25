@@ -161,6 +161,7 @@ export function createAIAdapter(opts: AIAdapterOptions = {}): FacAdapter {
   };
 
   return {
+    events: [],
     methods: {
       chat,
       text,

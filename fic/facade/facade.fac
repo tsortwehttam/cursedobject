@@ -26,6 +26,7 @@ Trip {
   location = "Apartment";
   public {
     name = "Trip";
+    aliases = "trip";
     look = "tall, trim build, dark hair combed back, tailored navy shirt, silver wedding band";
   }
   private {
@@ -47,6 +48,7 @@ Grace {
   location = "Apartment";
   public {
     name = "Grace";
+    aliases = "grace";
     look = "medium height, dark hair loose past her shoulders, cream silk blouse, dark jeans, small gold earrings";
   }
   private {
@@ -63,6 +65,7 @@ Grace {
 
 Apartment {
   public.name = "apartment";
+  public.aliases = "room|conversation";
   public.look = "expensive living room with bar cart, couch, wedding photo, Italy photo, abstract painting, sculpture, vase, stereo, and front door";
   location = "Apartment";
 }
@@ -71,48 +74,56 @@ Apartment {
 
 BarCart {
   public.name = "bar cart";
+  public.aliases = "bar|cart";
   public.look = "lacquered trolley with a martini shaker, gin, vermouth, two wine bottles, mineral water, juice, an ice bucket with tongs, and four cocktail glasses";
   location = "Apartment";
 }
 
 Painting {
   public.name = "abstract painting";
+  public.aliases = "painting";
   public.look = "large canvas in deep reds and blacks, signed 'G' in the lower right corner, framed in thin black wood, hung centered above the couch";
   location = "Apartment";
 }
 
 Sculpture {
   public.name = "sculpture";
+  public.aliases = "sculpture";
   public.look = "tall bronze form on a black pedestal, angular curves, unsigned";
   location = "Apartment";
 }
 
 Vase {
   public.name = "vase";
+  public.aliases = "vase";
   public.look = "slim porcelain vase with hand-painted blue flowers, on the side table";
   location = "Apartment";
 }
 
 Stereo {
   public.name = "stereo";
+  public.aliases = "stereo";
   public.look = "vintage turntable and two tall floor speakers, a jazz record on the platter, amplifier lights glowing";
   location = "Apartment";
 }
 
 Door {
   public.name = "front door";
+  public.aliases = "door";
   public.look = "heavy white-painted apartment door with a brass peephole and number plate";
   location = "Hallway";
 }
 
 WeddingPhoto {
   public.name = "wedding photo";
+  public.aliases = "wedding";
   public.look = "framed photograph of Grace and Trip in wedding clothes on a church step, both turned toward the camera";
   location = "Apartment";
 }
 
 ItalyPhoto {
   public.name = "Italy photo";
+  public.aliases = "photo|picture";
   public.look = "framed photograph of Grace standing alone on a sunlit stone piazza, hair blown to one side";
   location = "Apartment";
 }
@@ -278,20 +289,4 @@ Player giveto Grace $thing {
 Player giveto Trip $thing {
   Trip.feelings.affection incr;
   Trip react "gave you {{$thing}}";
-}
-
-Trip sayto Player $line {
-  <<say Trip ; Player ; {{$line}}>>;
-}
-
-Grace sayto Player $line {
-  <<say Grace ; Player ; {{$line}}>>;
-}
-
-Trip sayto Grace $line {
-  <<say Trip ; Grace ; {{$line}}>>;
-}
-
-Grace sayto Trip $line {
-  <<say Grace ; Trip ; {{$line}}>>;
 }

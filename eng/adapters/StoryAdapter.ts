@@ -17,7 +17,7 @@ export type StoryIO = {
 export type FacStoryAdapter = {
   ids: string[];
   params: ((io: StoryIO) => Promise<Record<string, SerialValue>>) | null;
-  parseInput: ((raw: string) => ParsedREPLInput) | null;
+  parseInput: ((raw: string, engine: Facsimile) => Promise<ParsedREPLInput>) | null;
   listActions: ((engine: Facsimile) => Promise<string[]>) | null;
   createAdapter: ((io: StoryIO) => FacAdapter) | null;
   style: TerminalStyle | null;
