@@ -1,0 +1,504 @@
+import { load as parseYaml } from "js-yaml";
+import { SerialObject, SerialValue } from "./lib/CoreTypings";
+import { castToString, isTruthy, safeGet, safeSet } from "./lib/EvalCasting";
+import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
+import { createPRNG } from "./lib/RandHelpers";
+import { createLoadedRunner, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
+import { readTemplateToken } from "./lib/TemplateHelpers";
+
+type LoadOptions = {
+  seed: string | number;
+  cycle: number;
+  params: Record<string, SerialValue>;
+  fn: Record<string, ExprEvalFunc>;
+  io: Record<string, MisterYamIoFunc>;
+};
+
+type LocalVars = Record<string, SerialValue>;
+type IfBranch = { expr: string | null; body: string; end: number };
+
+export type MisterYamIoFunc = (params: MarshalledParams, handle: MisterYamHandle) => Promise<SerialValue> | SerialValue;
+
+export type MisterYamHandle = {
+  calc(path: string): Promise<SerialValue>;
+  calcAll(): Promise<SerialObject>;
+  raw(path: string): SerialValue;
+};
+
+const DEFAULT_OPTIONS: LoadOptions = {
+  seed: 1,
+  cycle: 0,
+  params: {},
+  fn: {},
+  io: {},
+};
+
+const VARIATION_DELIMS = ["|", "^", "~"];
+
+export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHandle {
+  const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
+  const root = toSerialObject(parseYaml(yaml), "$");
+  const rng = createPRNG(options.seed, options.cycle);
+  const calcRoot: SerialObject = {};
+  const active = new Set<string>();
+  const done = new Set<string>();
+  const funcs = createFunctionMap(options.fn);
+  const runner = createLoadedRunner(rng, {}, funcs);
+
+  const handle: MisterYamHandle = {
+    calc,
+    calcAll,
+    raw,
+  };
+
+  async function calc(path: string): Promise<SerialValue> {
+    if (path.trim() === "") {
+      return calcAll();
+    }
+    if (!hasPath(root, path)) {
+      throw new Error(`Unknown path: ${path}`);
+    }
+    if (done.has(path)) {
+      return safeGet(calcRoot, path);
+    }
+    if (active.has(path)) {
+      throw new Error(`Circular calc path: ${path}`);
+    }
+    active.add(path);
+    const value = await calcValue(safeGet(root, path), path, {});
+    active.delete(path);
+    safeSet(calcRoot, path, value);
+    done.add(path);
+    return value;
+  }
+
+  async function calcAll(): Promise<SerialObject> {
+    for (const key of Object.keys(root)) {
+      await calc(key);
+    }
+    return calcRoot;
+  }
+
+  function raw(path: string): SerialValue {
+    if (!hasPath(root, path)) {
+      throw new Error(`Unknown path: ${path}`);
+    }
+    return safeGet(root, path);
+  }
+
+  async function calcValue(value: SerialValue, path: string, vars: LocalVars): Promise<SerialValue> {
+    if (typeof value === "string") {
+      const expr = readArrowExpr(value);
+      if (expr !== null) {
+        return evaluateExpr(expr, vars);
+      }
+      return renderText(value, vars);
+    }
+    if (Array.isArray(value)) {
+      const out: SerialValue[] = [];
+      for (let i = 0; i < value.length; i += 1) {
+        out.push(await calcValue(value[i], joinPath(path, String(i)), vars));
+      }
+      return out;
+    }
+    if (value !== null && typeof value === "object") {
+      const out: SerialObject = {};
+      for (const key of Object.keys(value)) {
+        out[key] = await calcValue(value[key], joinPath(path, key), vars);
+      }
+      return out;
+    }
+    return value;
+  }
+
+  async function renderText(text: string, vars: LocalVars): Promise<string> {
+    let out = "";
+    let loc = 0;
+    while (loc < text.length) {
+      const directive = text.indexOf("<<#", loc);
+      const conditional = text.indexOf("{{#if", loc);
+      const next = nextIndex(directive, conditional);
+      if (next < 0) {
+        out += await renderTemplates(text.slice(loc), vars);
+        break;
+      }
+      out += await renderTemplates(text.slice(loc, next), vars);
+      if (next === directive) {
+        const result = await renderDirective(text, next, vars);
+        out += result.text;
+        loc = result.end;
+      } else {
+        const result = await renderConditional(text, next, vars);
+        out += result.text;
+        loc = result.end;
+      }
+    }
+    return out;
+  }
+
+  async function renderTemplates(text: string, vars: LocalVars): Promise<string> {
+    let out = "";
+    let loc = 0;
+    while (loc < text.length) {
+      const start = text.indexOf("{{", loc);
+      if (start < 0) {
+        out += text.slice(loc);
+        break;
+      }
+      out += text.slice(loc, start);
+      const token = readTemplateToken(text, start, "{{", "}}", true);
+      if (!token) {
+        throw new Error(`Unclosed template at ${start}`);
+      }
+      out += castToString(await renderTemplateBody(token.body.trim(), vars));
+      loc = token.end;
+    }
+    return out;
+  }
+
+  async function renderTemplateBody(body: string, vars: LocalVars): Promise<SerialValue> {
+    const variation = splitVariation(body);
+    if (variation.length > 0) {
+      const choice = rng.randomElement(variation);
+      return renderTemplates(choice, vars);
+    }
+    return evaluateExpr(await renderTemplates(body, vars), vars);
+  }
+
+  async function renderDirective(text: string, start: number, vars: LocalVars): Promise<{ text: string; end: number }> {
+    const token = readTemplateToken(text, start, "<<", ">>", false, false);
+    if (!token) {
+      throw new Error(`Unclosed directive at ${start}`);
+    }
+    const match = token.body.match(/^#([A-Za-z_$][\w$]*)(?::([A-Za-z_$][\w$]*))?(?:\s+([\s\S]*))?$/);
+    if (!match) {
+      throw new Error(`Invalid directive: ${token.raw}`);
+    }
+    const name = match[1];
+    const binding = match[2] ?? "";
+    const args = await renderTemplates(match[3] ?? "", vars);
+    const fn = options.io[name];
+    if (!fn) {
+      throw new Error(`Unknown io directive: ${name}`);
+    }
+    const params = marshallParams(args, (expr) => evalParam(expr, vars));
+    const value = await fn(params, handle);
+    if (binding) {
+      vars[binding] = value;
+      return { text: "", end: token.end };
+    }
+    return { text: castToString(value), end: token.end };
+  }
+
+  async function renderConditional(text: string, start: number, vars: LocalVars): Promise<{ text: string; end: number }> {
+    const block = readIfTemplateBlock(text, start);
+    const branches = block.branches;
+    for (const branch of branches) {
+      if (branch.expr === null || isTruthy(await evaluateExpr(branch.expr, vars))) {
+        return { text: await renderText(branch.body, vars), end: block.end };
+      }
+    }
+    return { text: "", end: block.end };
+  }
+
+  async function evaluateExpr(expr: string, vars: LocalVars): Promise<SerialValue> {
+    const ast = runner.parse(expr);
+    if (!ast) {
+      throw new Error(`Invalid expression: ${expr}`);
+    }
+    await calcDependencies(ast, vars);
+    return evalSync(expr, vars);
+  }
+
+  async function calcDependencies(ast: Expr, vars: LocalVars): Promise<void> {
+    const deps: string[] = [];
+    walkExpr(ast, (node) => {
+      if ("var" in node && !hasPath(vars, node.var) && hasPath(root, node.var)) {
+        deps.push(node.var);
+      }
+    });
+    for (const dep of deps) {
+      await calc(dep);
+    }
+  }
+
+  function evalSync(expr: string, vars: LocalVars): SerialValue {
+    const all = mergeVars(root, calcRoot, options.params, vars);
+    const ast = runner.parse(expr);
+    if (!ast) {
+      throw new Error(`Invalid expression: ${expr}`);
+    }
+    assertKnownVars(ast, all, expr);
+    return runner.evaluate(expr, all, {});
+  }
+
+  function evalParam(expr: string, vars: LocalVars): SerialValue {
+    const all = mergeVars(root, calcRoot, options.params, vars);
+    const ast = runner.parse(expr);
+    if (!ast || !hasKnownVars(ast, all)) {
+      return null;
+    }
+    return runner.evaluate(expr, all, {});
+  }
+
+  function assertKnownVars(ast: Expr, vars: SerialObject, expr: string): void {
+    walkExpr(ast, (node) => {
+      if ("var" in node && !hasPath(vars, node.var)) {
+        throw new Error(`Unknown variable '${node.var}' in expression: ${expr}`);
+      }
+    });
+  }
+
+  function hasKnownVars(ast: Expr, vars: SerialObject): boolean {
+    let ok = true;
+    walkExpr(ast, (node) => {
+      if ("var" in node && !hasPath(vars, node.var)) {
+        ok = false;
+      }
+    });
+    return ok;
+  }
+
+  return handle;
+}
+
+function createFunctionMap(funcs: Record<string, ExprEvalFunc>): Record<string, ExprEvalFunc> {
+  return {
+    first: (value) => (Array.isArray(value) ? (value[0] ?? null) : null),
+    last: (value) => (Array.isArray(value) ? (value[value.length - 1] ?? null) : null),
+    ...funcs,
+  };
+}
+
+function toSerialObject(value: unknown, path: string): SerialObject {
+  const serial = toSerialValue(value, path);
+  if (serial === null || typeof serial !== "object" || Array.isArray(serial)) {
+    throw new Error("MisterYam root must be a YAML object");
+  }
+  return serial;
+}
+
+function toSerialValue(value: unknown, path: string): SerialValue {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error(`Invalid number at ${path}`);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const out: SerialValue[] = [];
+    for (let i = 0; i < value.length; i += 1) {
+      out.push(toSerialValue(value[i], joinPath(path, String(i))));
+    }
+    return out;
+  }
+  if (value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    const out: SerialObject = {};
+    for (const [key, val] of Object.entries(value)) {
+      out[key] = toSerialValue(val, joinPath(path, key));
+    }
+    return out;
+  }
+  throw new Error(`Unsupported YAML value at ${path}`);
+}
+
+function readArrowExpr(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("->")) {
+    return null;
+  }
+  return trimmed.slice(2).trim();
+}
+
+function readIfTemplateBlock(text: string, start: number): { branches: IfBranch[]; end: number } {
+  const first = readTemplateToken(text, start, "{{", "}}", true);
+  if (!first) {
+    throw new Error(`Unclosed if block at ${start}`);
+  }
+  const head = first.body.trim();
+  if (!head.startsWith("#if ")) {
+    throw new Error(`Invalid if block at ${start}`);
+  }
+  const branches: IfBranch[] = [];
+  let expr: string | null = head.slice(4).trim();
+  let bodyStart = first.end;
+  let depth = 0;
+  let loc = first.end;
+  while (loc < text.length) {
+    const next = text.indexOf("{{", loc);
+    if (next < 0) {
+      break;
+    }
+    const token = readTemplateToken(text, next, "{{", "}}", true);
+    if (!token) {
+      throw new Error(`Unclosed template at ${next}`);
+    }
+    const marker = token.body.trim();
+    if (marker.startsWith("#if ")) {
+      depth += 1;
+      loc = token.end;
+      continue;
+    }
+    if (marker === "/if") {
+      if (depth > 0) {
+        depth -= 1;
+        loc = token.end;
+        continue;
+      }
+      branches.push({ expr, body: text.slice(bodyStart, next), end: token.end });
+      return { branches, end: token.end };
+    }
+    if (depth === 0 && marker.startsWith("elseif ")) {
+      branches.push({ expr, body: text.slice(bodyStart, next), end: token.end });
+      expr = marker.slice("elseif ".length).trim();
+      bodyStart = token.end;
+      loc = token.end;
+      continue;
+    }
+    if (depth === 0 && marker === "else") {
+      branches.push({ expr, body: text.slice(bodyStart, next), end: token.end });
+      expr = null;
+      bodyStart = token.end;
+      loc = token.end;
+      continue;
+    }
+    loc = token.end;
+  }
+  throw new Error(`Missing {{/if}} for if block at ${start}`);
+}
+
+function splitVariation(body: string): string[] {
+  for (const delim of VARIATION_DELIMS) {
+    const parts = splitTopLevel(body, delim);
+    if (parts.length > 1 && parts.every(looksLikeVariationPart)) {
+      return parts;
+    }
+  }
+  return [];
+}
+
+function splitTopLevel(text: string, delim: string): string[] {
+  const out: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let quote = "";
+  let escape = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i] ?? "";
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth += 1;
+      continue;
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth -= 1;
+      continue;
+    }
+    if (depth === 0 && ch === delim) {
+      out.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  out.push(text.slice(start).trim());
+  return out;
+}
+
+function looksLikeVariationPart(part: string): boolean {
+  if (!part) {
+    return false;
+  }
+  if (part.includes("{{") || part.includes("}}")) {
+    return true;
+  }
+  return !/[()+*/<>=?:,;[\]{}]/.test(part);
+}
+
+function mergeVars(...records: SerialObject[]): SerialObject {
+  const out: SerialObject = {};
+  for (const record of records) {
+    mergeInto(out, record);
+  }
+  return out;
+}
+
+function mergeInto(target: SerialObject, source: SerialObject): void {
+  for (const key of Object.keys(source)) {
+    const value = source[key];
+    const existing = target[key];
+    if (isPlainSerialObject(existing) && isPlainSerialObject(value)) {
+      mergeInto(existing, value);
+      continue;
+    }
+    target[key] = value;
+  }
+}
+
+function isPlainSerialObject(value: SerialValue): value is SerialObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasPath(root: Record<string, SerialValue>, path: string): boolean {
+  if (path.trim() === "") {
+    return true;
+  }
+  const parts = path.split(".");
+  let cur: SerialValue | Record<string, SerialValue> = root;
+  for (const part of parts) {
+    if (cur === null || typeof cur !== "object") {
+      return false;
+    }
+    if (Array.isArray(cur)) {
+      const idx = Number(part);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) {
+        return false;
+      }
+      cur = cur[idx];
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(cur, part)) {
+      return false;
+    }
+    cur = cur[part];
+  }
+  return true;
+}
+
+function joinPath(base: string, part: string): string {
+  if (base === "$") {
+    return part;
+  }
+  if (!base) {
+    return part;
+  }
+  return `${base}.${part}`;
+}
+
+function nextIndex(a: number, b: number): number {
+  if (a < 0) {
+    return b;
+  }
+  if (b < 0) {
+    return a;
+  }
+  return Math.min(a, b);
+}

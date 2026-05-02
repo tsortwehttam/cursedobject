@@ -1,9 +1,8 @@
 import { SerialValue } from "./CoreTypings";
 import { castToString, isVarPath } from "./EvalCasting";
-import { isValidUrl } from "./HTTPHelpers";
 import { parseNumberOrNull } from "./MathHelpers";
 import { ExprEvalFunc } from "./ScriptEvaluator";
-import { isBlank } from "./TextHelpers";
+import { isBlank, isUrlValue } from "./TextHelpers";
 import { KVP_DELIM, LexerToken, looksLikeScriptExpression, tokenize, tokensToScalarValue } from "./TokenizerLexer";
 
 export type EvaluatorFunc = (
@@ -91,7 +90,7 @@ export function marshallTokensToValue(tokens: LexerToken[], evaluate: EvaluatorF
   }
   const val = tokensToScalarValue(tokens);
   if (typeof val === "string") {
-    if (isValidUrl(val)) {
+    if (isUrlValue(val)) {
       return val;
     }
     return evaluate(val, {}, {});

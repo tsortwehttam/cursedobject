@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import { SerialValue } from "../lib/CoreTypings";
+import { load } from "../misteryam";
+
+async function main() {
+  const yam = load(
+    `
+foo: 1
+bar: bum
+yay:
+  - heave
+  - ho
+wow: "{{bar}}"
+hooray: "{{last(yay)}}"
+blah: -> 1 + 2
+longer: The distance is {{manhattan(123, 456, 789, 100)}}.
+choice: "{{cool|great|amazing}}"
+inline: Hi <<#echo name Ada; title Dr>>
+bound: |
+  <<#score:result 7>>
+  {{#if result > 5}}
+    high {{bar}}
+  {{elseif result == 5}}
+    even
+  {{else}}
+    low
+  {{/if}}
+braced: '{{#if true}}{yes}{{/if}}'
+meow:
+  a: "{{foo + blah}}"
+  b: "{{hooray}}"
+`,
+    {
+      seed: 123,
+      fn: {
+        manhattan(x1: SerialValue, x2: SerialValue, y1: SerialValue, y2: SerialValue) {
+          return Math.abs(Number(x1) - Number(y1)) + Math.abs(Number(x2) - Number(y2));
+        },
+      },
+      io: {
+        echo(params) {
+          return `${params.pairs.title} ${params.pairs.name}`;
+        },
+        score(params) {
+          return params.artifacts[0];
+        },
+      },
+    },
+  );
+
+  assert.equal(await yam.calc("wow"), "bum");
+  assert.equal(await yam.calc("hooray"), "ho");
+  assert.equal(await yam.calc("blah"), 3);
+  assert.equal(await yam.calc("longer"), "The distance is 1022.");
+  assert.match(String(await yam.calc("choice")), /^(cool|great|amazing)$/);
+  assert.equal(await yam.calc("inline"), "Hi Dr Ada");
+  assert.equal(String(await yam.calc("bound")).trim(), "high bum");
+  assert.equal(await yam.calc("braced"), "{yes}");
+  assert.deepEqual(await yam.calc("meow"), { a: "4", b: "ho" });
+  assert.equal(yam.raw("bar"), "bum");
+
+  const all = await yam.calcAll();
+  assert.equal(all.bar, "bum");
+  assert.deepEqual(all.meow, { a: "4", b: "ho" });
+
+  await assert.rejects(() => load("bad: '{{missing}}'").calc("bad"), /Unknown variable 'missing'/);
+  await assert.rejects(() => load("bad: '<<#missing ok>>'").calc("bad"), /Unknown io directive: missing/);
+}
+
+void main();

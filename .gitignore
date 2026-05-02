@@ -9,6 +9,4 @@ node_modules
 *.tsbuildinfo
 .local-data
 .sst/*
-web/.open-next
 .github
-.msgmon/*
