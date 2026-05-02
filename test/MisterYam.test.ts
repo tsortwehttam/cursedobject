@@ -29,6 +29,16 @@ braced: '{{#if true}}{yes}{{/if}}'
 meow:
   a: "{{foo + blah}}"
   b: "{{hooray}}"
+people:
+  - name: "{{bar}}"
+    score: -> 10 + 1
+  - name: Ada
+    score: 7
+names: -> select("people.*.name")
+scores: -> select("people.*.score")
+firstName: "{{get('people.0.name')}}"
+missingOne: -> get("people.9.name")
+missingMany: -> select("people.*.missing")
 `,
     {
       seed: 123,
@@ -57,6 +67,11 @@ meow:
   assert.equal(String(await yam.calc("bound")).trim(), "high bum");
   assert.equal(await yam.calc("braced"), "{yes}");
   assert.deepEqual(await yam.calc("meow"), { a: "4", b: "ho" });
+  assert.deepEqual(await yam.calc("names"), ["bum", "Ada"]);
+  assert.deepEqual(await yam.calc("scores"), [11, 7]);
+  assert.equal(await yam.calc("firstName"), "bum");
+  assert.equal(await yam.calc("missingOne"), null);
+  assert.deepEqual(await yam.calc("missingMany"), []);
   assert.equal(yam.raw("bar"), "bum");
 
   const all = await yam.calcAll();

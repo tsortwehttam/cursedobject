@@ -42,7 +42,7 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
   const calcRoot: SerialObject = {};
   const active = new Set<string>();
   const done = new Set<string>();
-  const funcs = createFunctionMap(options.fn);
+  const funcs = createBaseFunctionMap(options.fn);
   const runner = createLoadedRunner(rng, {}, funcs);
 
   const handle: MisterYamHandle = {
@@ -211,10 +211,24 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
   }
 
   async function calcDependencies(ast: Expr, vars: LocalVars): Promise<void> {
-    const deps: string[] = [];
+    const deps = new Set<string>();
     walkExpr(ast, (node) => {
       if ("var" in node && !hasPath(vars, node.var) && hasPath(root, node.var)) {
-        deps.push(node.var);
+        deps.add(node.var);
+      }
+      if ("op" in node && node.op === "get") {
+        const path = readLiteralPath(node);
+        if (path && hasPath(root, path)) {
+          deps.add(path);
+        }
+      }
+      if ("op" in node && node.op === "select") {
+        const pattern = readLiteralPath(node);
+        if (pattern) {
+          for (const path of matchPaths(root, pattern)) {
+            deps.add(path);
+          }
+        }
       }
     });
     for (const dep of deps) {
@@ -229,7 +243,7 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
       throw new Error(`Invalid expression: ${expr}`);
     }
     assertKnownVars(ast, all, expr);
-    return runner.evaluate(expr, all, {});
+    return runner.evaluate(expr, all, createPathFunctionMap(all));
   }
 
   function evalParam(expr: string, vars: LocalVars): SerialValue {
@@ -238,7 +252,7 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
     if (!ast || !hasKnownVars(ast, all)) {
       return null;
     }
-    return runner.evaluate(expr, all, {});
+    return runner.evaluate(expr, all, createPathFunctionMap(all));
   }
 
   function assertKnownVars(ast: Expr, vars: SerialObject, expr: string): void {
@@ -262,12 +276,40 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
   return handle;
 }
 
-function createFunctionMap(funcs: Record<string, ExprEvalFunc>): Record<string, ExprEvalFunc> {
+function createBaseFunctionMap(funcs: Record<string, ExprEvalFunc>): Record<string, ExprEvalFunc> {
   return {
     first: (value) => (Array.isArray(value) ? (value[0] ?? null) : null),
     last: (value) => (Array.isArray(value) ? (value[value.length - 1] ?? null) : null),
     ...funcs,
   };
+}
+
+function createPathFunctionMap(vars: SerialObject): Record<string, ExprEvalFunc> {
+  return {
+    get: (path) => {
+      if (typeof path !== "string") {
+        return null;
+      }
+      return hasPath(vars, path) ? safeGet(vars, path) : null;
+    },
+    select: (pattern) => {
+      if (typeof pattern !== "string") {
+        return [];
+      }
+      return matchPaths(vars, pattern).map((path) => safeGet(vars, path));
+    },
+  };
+}
+
+function readLiteralPath(node: Expr): string | null {
+  if (!("args" in node)) {
+    return null;
+  }
+  const first = node.args[0];
+  if (!first || !("lit" in first) || typeof first.lit !== "string") {
+    return null;
+  }
+  return first.lit;
 }
 
 function toSerialObject(value: unknown, path: string): SerialObject {
@@ -481,6 +523,50 @@ function hasPath(root: Record<string, SerialValue>, path: string): boolean {
     cur = cur[part];
   }
   return true;
+}
+
+function matchPaths(root: SerialObject, pattern: string): string[] {
+  if (pattern.trim() === "") {
+    return [];
+  }
+  const out: string[] = [];
+  walkPath(root, pattern.split("."), [], out);
+  return out;
+}
+
+function walkPath(value: SerialValue, parts: string[], path: string[], out: string[]): void {
+  if (parts.length === 0) {
+    out.push(path.join("."));
+    return;
+  }
+  if (value === null || typeof value !== "object") {
+    return;
+  }
+  const [part, ...rest] = parts;
+  if (part === "*") {
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) {
+        walkPath(value[i], rest, [...path, String(i)], out);
+      }
+      return;
+    }
+    for (const key of Object.keys(value)) {
+      walkPath(value[key], rest, [...path, key], out);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    const idx = Number(part);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= value.length) {
+      return;
+    }
+    walkPath(value[idx], rest, [...path, part], out);
+    return;
+  }
+  if (!Object.prototype.hasOwnProperty.call(value, part)) {
+    return;
+  }
+  walkPath(value[part], rest, [...path, part], out);
 }
 
 function joinPath(base: string, part: string): string {

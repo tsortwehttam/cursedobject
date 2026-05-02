@@ -1,7 +1,17 @@
 {
-  "name": "base",
+  "name": "misteryam",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "🍠 YAML templates with expressions, deterministic variation, async directives, and calculated field selection.",
+  "main": "misteryam.ts",
+  "types": "misteryam.ts",
+  "files": [
+    "misteryam.ts",
+    "lib",
+    "README.md",
+    "LICENSE",
+    "mascot.png"
+  ],
+  "author": "Matthew Trost",
   "license": "Apache-2.0",
   "scripts": {
     "ts": "tsx --",
