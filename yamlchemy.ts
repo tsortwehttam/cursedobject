@@ -11,15 +11,15 @@ type LoadOptions = {
   cycle: number;
   params: Record<string, SerialValue>;
   fn: Record<string, ExprEvalFunc>;
-  io: Record<string, MisterYamIoFunc>;
+  io: Record<string, YamlchemyIoFunc>;
 };
 
 type LocalVars = Record<string, SerialValue>;
 type IfBranch = { expr: string | null; body: string; end: number };
 
-export type MisterYamIoFunc = (params: MarshalledParams, handle: MisterYamHandle) => Promise<SerialValue> | SerialValue;
+export type YamlchemyIoFunc = (params: MarshalledParams, handle: YamlchemyHandle) => Promise<SerialValue> | SerialValue;
 
-export type MisterYamHandle = {
+export type YamlchemyHandle = {
   calc(path: string): Promise<SerialValue>;
   calcAll(): Promise<SerialObject>;
   evaluate(expr: string): Promise<SerialValue>;
@@ -36,7 +36,7 @@ const DEFAULT_OPTIONS: LoadOptions = {
 
 const VARIATION_DELIMS = ["|", "^", "~"];
 
-export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHandle {
+export function load(yaml: string, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
   const root = toSerialObject(parseYaml(yaml), "$");
   const rng = createPRNG(options.seed, options.cycle);
@@ -46,7 +46,7 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
   const funcs = createBaseFunctionMap(options.fn);
   const runner = createLoadedRunner(rng, {}, funcs);
 
-  const handle: MisterYamHandle = {
+  const handle: YamlchemyHandle = {
     calc,
     calcAll,
     evaluate,
@@ -321,7 +321,7 @@ function readLiteralPath(node: Expr): string | null {
 function toSerialObject(value: unknown, path: string): SerialObject {
   const serial = toSerialValue(value, path);
   if (serial === null || typeof serial !== "object" || Array.isArray(serial)) {
-    throw new Error("MisterYam root must be a YAML object");
+    throw new Error("Yamlchemy root must be a YAML object");
   }
   return serial;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { SerialValue } from "../lib/CoreTypings";
-import { load } from "../misteryam";
+import { load } from "../yamlchemy";
 
 async function main() {
   const yam = load(

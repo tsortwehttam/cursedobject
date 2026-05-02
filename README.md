@@ -1,11 +1,11 @@
-# MisterYam 🍠
+# Yamlchemy 🍠
 
-<img src="./mascot.png" alt="MisterYam mascot" width="160" />
+<img src="./mascot.png" alt="Yamlchemy mascot" width="160" />
 
-MisterYam loads YAML and calculates values with deterministic templates, expressions, local async bindings, and inline conditionals.
+Yamlchemy loads YAML and calculates values with deterministic templates, expressions, local async bindings, and inline conditionals.
 
 ```ts
-import { load } from "./misteryam";
+import { load } from "./yamlchemy";
 
 const yam = load(
   `

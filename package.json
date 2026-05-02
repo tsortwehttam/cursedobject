@@ -1,11 +1,11 @@
 {
-  "name": "misteryam",
+  "name": "yamlchemy",
   "version": "1.0.0",
   "description": "🍠 YAML templates with expressions, deterministic variation, async directives, and calculated field selection.",
-  "main": "misteryam.ts",
-  "types": "misteryam.ts",
+  "main": "yamlchemy.ts",
+  "types": "yamlchemy.ts",
   "files": [
-    "misteryam.ts",
+    "yamlchemy.ts",
     "lib",
     "README.md",
     "LICENSE",
