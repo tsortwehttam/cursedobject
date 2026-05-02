@@ -2,7 +2,7 @@
 
 <img src="./mascot.png" alt="Yamlchemy mascot" width="160" />
 
-Yamlchemy loads YAML and calculates values with deterministic templates, expressions, local async bindings, and inline conditionals.
+Yamlchemy loads YAML (or a parsed object) and calculates values with deterministic templates, expressions, local async bindings, and inline conditionals.
 
 ```ts
 import { load } from "./yamlchemy";

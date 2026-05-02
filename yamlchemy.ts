@@ -36,9 +36,10 @@ const DEFAULT_OPTIONS: LoadOptions = {
 
 const VARIATION_DELIMS = ["|", "^", "~"];
 
-export function load(yaml: string, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
+export function load(source: string | object, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
-  const root = toSerialObject(parseYaml(yaml), "$");
+  const parsed = typeof source === "string" ? parseYaml(source) : source;
+  const root = toSerialObject(parsed, "$");
   const rng = createPRNG(options.seed, options.cycle);
   const calcRoot: SerialObject = {};
   const active = new Set<string>();
