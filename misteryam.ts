@@ -22,6 +22,7 @@ export type MisterYamIoFunc = (params: MarshalledParams, handle: MisterYamHandle
 export type MisterYamHandle = {
   calc(path: string): Promise<SerialValue>;
   calcAll(): Promise<SerialObject>;
+  evaluate(expr: string): Promise<SerialValue>;
   raw(path: string): SerialValue;
 };
 
@@ -48,6 +49,7 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
   const handle: MisterYamHandle = {
     calc,
     calcAll,
+    evaluate,
     raw,
   };
 
@@ -84,6 +86,10 @@ export function load(yaml: string, opts: Partial<LoadOptions> = {}): MisterYamHa
       throw new Error(`Unknown path: ${path}`);
     }
     return safeGet(root, path);
+  }
+
+  async function evaluate(expr: string): Promise<SerialValue> {
+    return evaluateExpr(expr, {});
   }
 
   async function calcValue(value: SerialValue, path: string, vars: LocalVars): Promise<SerialValue> {

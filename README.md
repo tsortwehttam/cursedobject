@@ -38,6 +38,7 @@ line: |
 await yam.calc("greeting"); // "Hello Ada"
 await yam.calc("score"); // 3
 await yam.calc("allNames"); // ["Ada", "Grace"]
+await yam.evaluate("get('names.0')"); // "Ada"
 yam.raw("greeting"); // "Hello {{name}}"
 await yam.calcAll();
 ```
@@ -53,7 +54,7 @@ await yam.calcAll();
 - `<<#name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing.
 - `{{#if expr}}...{{elseif expr}}...{{else}}...{{/if}}` renders the first matching block.
 
-`calc(path)` and `calcAll()` are async. Missing paths, bad expressions, unknown variables, unknown directives, and circular dependencies throw.
+`calc(path)`, `calcAll()`, and `evaluate(expr)` are async. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths, bad expressions, unknown variables, unknown directives, and circular dependencies throw.
 
 ## License
 

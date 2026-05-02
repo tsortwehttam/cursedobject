@@ -36,6 +36,7 @@ people:
     score: 7
 names: -> select("people.*.name")
 scores: -> select("people.*.score")
+directName: "{{people.0.name}}"
 firstName: "{{get('people.0.name')}}"
 missingOne: -> get("people.9.name")
 missingMany: -> select("people.*.missing")
@@ -69,9 +70,14 @@ missingMany: -> select("people.*.missing")
   assert.deepEqual(await yam.calc("meow"), { a: "4", b: "ho" });
   assert.deepEqual(await yam.calc("names"), ["bum", "Ada"]);
   assert.deepEqual(await yam.calc("scores"), [11, 7]);
+  assert.equal(await yam.calc("directName"), "bum");
   assert.equal(await yam.calc("firstName"), "bum");
   assert.equal(await yam.calc("missingOne"), null);
   assert.deepEqual(await yam.calc("missingMany"), []);
+  assert.equal(await yam.evaluate("foo + blah"), 4);
+  assert.equal(await yam.evaluate("people.0.name"), "bum");
+  assert.deepEqual(await yam.evaluate("select('people.*.score')"), [11, 7]);
+  assert.equal(await yam.evaluate("get('people.9.name')"), null);
   assert.equal(yam.raw("bar"), "bum");
 
   const all = await yam.calcAll();
@@ -79,6 +85,7 @@ missingMany: -> select("people.*.missing")
   assert.deepEqual(all.meow, { a: "4", b: "ho" });
 
   await assert.rejects(() => load("bad: '{{missing}}'").calc("bad"), /Unknown variable 'missing'/);
+  await assert.rejects(() => yam.evaluate("missing + 1"), /Unknown variable 'missing'/);
   await assert.rejects(() => load("bad: '<<#missing ok>>'").calc("bad"), /Unknown io directive: missing/);
 }
 

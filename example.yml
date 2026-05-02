@@ -1,0 +1,64 @@
+# Plain YAML values are available as expression variables.
+foo: 1
+bar: bum
+
+# Arrays and objects keep normal YAML shape.
+yay:
+  - heave
+  - ho
+
+# {{expr}} interpolates expressions into strings.
+wow: "{{bar}}"
+hooray: "{{last(yay)}}"
+
+# -> returns the expression value directly instead of a string interpolation.
+blah: -> 1 + 2
+
+# Custom sync functions from load({ fn }) can be called from expressions.
+longer: The distance is {{manhattan(123, 456, 789, 100)}}.
+
+# Dynamic content variation picks one option with the seeded PRNG.
+# Bare |, ^, and ~ separators work when all parts look like plain text.
+choice: "{{cool|great|amazing}}"
+
+# <<#name args>> calls an async io function and inserts its result.
+inline: Hi <<#echo name Ada; title Dr>>
+
+# <<#name:binding args>> stores a local binding for the current block.
+# {{#if}} conditionals use the same expression language as templates.
+bound: |
+  <<#score:result 7>>
+  {{#if result > 5}}
+    high {{bar}}
+  {{elseif result == 5}}
+    even
+  {{else}}
+    low
+  {{/if}}
+
+# Literal braces are fine inside {{#if}} blocks.
+braced: "{{#if true}}{yes}{{/if}}"
+
+# Nested values calculate recursively.
+meow:
+  a: "{{foo + blah}}"
+  b: "{{hooray}}"
+
+people:
+  - name: "{{bar}}"
+    score: -> 10 + 1
+  - name: Ada
+    score: 7
+
+# Dotted array index paths are supported directly.
+directName: "{{people.0.name}}"
+
+# get() reads one calculated path and returns null when missing.
+firstName: "{{get('people.0.name')}}"
+missingOne: -> get("people.9.name")
+
+# select() reads calculated wildcard matches and always returns an array.
+# * matches one object key or array index.
+names: -> select("people.*.name")
+scores: -> select("people.*.score")
+missingMany: -> select("people.*.missing")
