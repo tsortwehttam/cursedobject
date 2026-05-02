@@ -1,9 +1,10 @@
 import { load as parseYaml } from "js-yaml";
 import { SerialObject, SerialValue } from "./lib/CoreTypings";
-import { castToString, isTruthy, safeGet, safeSet } from "./lib/EvalCasting";
+import { castToString, isTruthy, safeGet } from "./lib/EvalCasting";
 import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
 import { createPRNG } from "./lib/RandHelpers";
-import { createLoadedRunner, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
+import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
+import { createRandFunctions } from "./lib/functions/RandFunctions";
 import { readTemplateToken } from "./lib/TemplateHelpers";
 
 type LoadOptions = {
@@ -41,11 +42,29 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
   const parsed = typeof source === "string" ? parseYaml(source) : source;
   const root = toSerialObject(parsed, "$");
   const rng = createPRNG(options.seed, options.cycle);
-  const calcRoot: SerialObject = {};
+  const view: SerialObject = cloneSerial(root) as SerialObject;
   const active = new Set<string>();
   const done = new Set<string>();
   const funcs = createBaseFunctionMap(options.fn);
   const runner = createLoadedRunner(rng, {}, funcs);
+  const baseFuncs = buildEvalFunctions({ ...createRandFunctions(rng), ...funcs });
+  const astCache = new Map<string, Expr | null>();
+
+  function parseCached(expr: string): Expr | null {
+    if (astCache.has(expr)) {
+      return astCache.get(expr) ?? null;
+    }
+    const ast = runner.parse(expr);
+    astCache.set(expr, ast);
+    return ast;
+  }
+
+  function mergedVars(vars: LocalVars): SerialObject {
+    const out: SerialObject = { ...view };
+    overlay(out, options.params);
+    overlay(out, vars);
+    return out;
+  }
 
   const handle: YamlchemyHandle = {
     calc,
@@ -62,7 +81,7 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
       throw new Error(`Unknown path: ${path}`);
     }
     if (done.has(path)) {
-      return safeGet(calcRoot, path);
+      return safeGet(view, path);
     }
     if (active.has(path)) {
       throw new Error(`Circular calc path: ${path}`);
@@ -70,7 +89,7 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
     active.add(path);
     const value = await calcValue(safeGet(root, path), path, {});
     active.delete(path);
-    safeSet(calcRoot, path, value);
+    setViewPath(view, path, value);
     done.add(path);
     return value;
   }
@@ -79,7 +98,7 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
     for (const key of Object.keys(root)) {
       await calc(key);
     }
-    return calcRoot;
+    return view;
   }
 
   function raw(path: string): SerialValue {
@@ -209,12 +228,17 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
   }
 
   async function evaluateExpr(expr: string, vars: LocalVars): Promise<SerialValue> {
-    const ast = runner.parse(expr);
+    if (expr.trim() === "") {
+      return runner.evaluate(expr);
+    }
+    const ast = parseCached(expr);
     if (!ast) {
       throw new Error(`Invalid expression: ${expr}`);
     }
     await calcDependencies(ast, vars);
-    return evalSync(expr, vars);
+    const all = mergedVars(vars);
+    assertKnownVars(ast, all, expr);
+    return evaluateExprCore(ast, all, { ...baseFuncs, ...createPathFunctionMap(all) });
   }
 
   async function calcDependencies(ast: Expr, vars: LocalVars): Promise<void> {
@@ -243,23 +267,13 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
     }
   }
 
-  function evalSync(expr: string, vars: LocalVars): SerialValue {
-    const all = mergeVars(root, calcRoot, options.params, vars);
-    const ast = runner.parse(expr);
-    if (!ast) {
-      throw new Error(`Invalid expression: ${expr}`);
-    }
-    assertKnownVars(ast, all, expr);
-    return runner.evaluate(expr, all, createPathFunctionMap(all));
-  }
-
   function evalParam(expr: string, vars: LocalVars): SerialValue {
-    const all = mergeVars(root, calcRoot, options.params, vars);
-    const ast = runner.parse(expr);
+    const ast = parseCached(expr);
+    const all = mergedVars(vars);
     if (!ast || !hasKnownVars(ast, all)) {
       return null;
     }
-    return runner.evaluate(expr, all, createPathFunctionMap(all));
+    return evaluateExprCore(ast, all, { ...baseFuncs, ...createPathFunctionMap(all) });
   }
 
   function assertKnownVars(ast: Expr, vars: SerialObject, expr: string): void {
@@ -482,28 +496,65 @@ function looksLikeVariationPart(part: string): boolean {
   return !/[()+*/<>=?:,;[\]{}]/.test(part);
 }
 
-function mergeVars(...records: SerialObject[]): SerialObject {
-  const out: SerialObject = {};
-  for (const record of records) {
-    mergeInto(out, record);
-  }
-  return out;
-}
-
-function mergeInto(target: SerialObject, source: SerialObject): void {
-  for (const key of Object.keys(source)) {
-    const value = source[key];
-    const existing = target[key];
-    if (isPlainSerialObject(existing) && isPlainSerialObject(value)) {
-      mergeInto(existing, value);
+function setViewPath(root: SerialObject, path: string, value: SerialValue): void {
+  const parts = path.split(".");
+  let cur: SerialValue = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const part = parts[i]!;
+    if (cur === null || typeof cur !== "object") return;
+    if (Array.isArray(cur)) {
+      const idx = Number(part);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) return;
+      cur = cur[idx] ?? null;
       continue;
     }
-    target[key] = value;
+    cur = cur[part] ?? null;
+  }
+  const last = parts[parts.length - 1]!;
+  if (cur === null || typeof cur !== "object") return;
+  if (Array.isArray(cur)) {
+    const idx = Number(last);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) return;
+    cur[idx] = value;
+    return;
+  }
+  cur[last] = value;
+}
+
+function overlay(target: SerialObject, source: Record<string, SerialValue>): void {
+  for (const key of Object.keys(source)) {
+    const a = target[key];
+    const b = source[key];
+    if (isPlainObj(a) && isPlainObj(b)) {
+      const merged: SerialObject = { ...a };
+      overlay(merged, b);
+      target[key] = merged;
+      continue;
+    }
+    target[key] = b;
   }
 }
 
-function isPlainSerialObject(value: SerialValue): value is SerialObject {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
+function isPlainObj(value: SerialValue | undefined): value is SerialObject {
+  return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value);
+}
+
+function cloneSerial(value: SerialValue): SerialValue {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const out: SerialValue[] = [];
+    for (let i = 0; i < value.length; i += 1) {
+      out.push(cloneSerial(value[i] ?? null));
+    }
+    return out;
+  }
+  const out: SerialObject = {};
+  for (const key of Object.keys(value)) {
+    out[key] = cloneSerial(value[key] ?? null);
+  }
+  return out;
 }
 
 function hasPath(root: Record<string, SerialValue>, path: string): boolean {
