@@ -60,7 +60,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   const rng = createPRNG(options.seed, options.cycle);
   const view: SerialObject = cloneSerial(root) as SerialObject;
   const active = new Set<string>();
-  const done = new Set<string>();
   const funcs = createBaseFunctionMap(options.fn);
   const runner = createLoadedRunner(rng, {}, funcs);
   const baseFuncs = buildEvalFunctions({ ...createRandFunctions(rng), ...funcs });
@@ -96,17 +95,11 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   async function calc(path: string, vars: LocalVars = {}): Promise<SerialValue> {
-    if (hasVars(vars)) {
-      return fork({ params: vars }).calc(path);
-    }
     if (path.trim() === "") {
-      return calcAll();
+      return calcAll(vars);
     }
     if (!hasPath(root, path)) {
       throw new Error(`Unknown path: ${path}`);
-    }
-    if (done.has(path)) {
-      return safeGet(view, path);
     }
     if (active.has(path)) {
       throw new Error(`Circular calc path: ${path}`);
@@ -115,16 +108,12 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     const value = await calcValue(safeGet(root, path), path, vars);
     active.delete(path);
     setViewPath(view, path, value);
-    done.add(path);
     return value;
   }
 
   async function calcAll(vars: LocalVars = {}): Promise<SerialObject> {
-    if (hasVars(vars)) {
-      return fork({ params: vars }).calcAll();
-    }
     for (const key of Object.keys(root)) {
-      await calc(key);
+      await calc(key, vars);
     }
     return view;
   }
@@ -137,9 +126,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   async function evaluate(expr: string, vars: LocalVars = {}): Promise<SerialValue> {
-    if (hasVars(vars)) {
-      return fork({ params: vars }).evaluate(expr);
-    }
     return evaluateExpr(expr, vars);
   }
 
@@ -339,10 +325,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   return handle;
-}
-
-function hasVars(vars: LocalVars): boolean {
-  return Object.keys(vars).length > 0;
 }
 
 function createBaseFunctionMap(funcs: Record<string, ExprEvalFunc>): Record<string, ExprEvalFunc> {

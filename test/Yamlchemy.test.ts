@@ -97,6 +97,7 @@ alias: "{{ get('self.name') }}"
   assert.equal(await scoped.calc("greeting"), "Hello Ada");
   assert.equal(await scoped.calc("alias", { self: { name: "Lovelace" } }), "Lovelace");
   assert.deepEqual(await scoped.calcAll({ name: "Grace" }), { name: "Ada", greeting: "Hello Grace", alias: "" });
+  assert.equal(await scoped.calc("greeting"), "Hello Ada");
 
   const forked = scoped.fork({ params: { name: "Katherine" } });
   assert.equal(await forked.calc("greeting"), "Hello Katherine");
