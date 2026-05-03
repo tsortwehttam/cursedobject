@@ -1,13 +1,15 @@
 import { load as parseYaml } from "js-yaml";
 import { SerialObject, SerialValue } from "./lib/CoreTypings";
-import { castToString, isTruthy, safeGet } from "./lib/EvalCasting";
+import { castToString, isTruthy, isValidKey, safeGet } from "./lib/EvalCasting";
 import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
 import { createPRNG } from "./lib/RandHelpers";
 import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
 import { createRandFunctions } from "./lib/functions/RandFunctions";
 import { readTemplateToken } from "./lib/TemplateHelpers";
 
-type LoadOptions = {
+export type YamlchemySource = string | SerialObject;
+
+export type LoadOptions = {
   seed: string | number;
   cycle: number;
   params: Record<string, SerialValue>;
@@ -21,10 +23,24 @@ type IfBranch = { expr: string | null; body: string; end: number };
 export type YamlchemyIoFunc = (params: MarshalledParams, handle: YamlchemyHandle) => Promise<SerialValue> | SerialValue;
 
 export type YamlchemyHandle = {
-  calc(path: string): Promise<SerialValue>;
-  calcAll(): Promise<SerialObject>;
-  evaluate(expr: string): Promise<SerialValue>;
+  has(path: string): boolean;
+  calc: {
+    (path: string): Promise<SerialValue>;
+    (path: string, vars: Record<string, SerialValue>): Promise<SerialValue>;
+  };
+  calcAll: {
+    (): Promise<SerialObject>;
+    (vars: Record<string, SerialValue>): Promise<SerialObject>;
+  };
+  evaluate: {
+    (expr: string): Promise<SerialValue>;
+    (expr: string, vars: Record<string, SerialValue>): Promise<SerialValue>;
+  };
   raw(path: string): SerialValue;
+  fork: {
+    (): YamlchemyHandle;
+    (opts: Partial<LoadOptions>): YamlchemyHandle;
+  };
 };
 
 const DEFAULT_OPTIONS: LoadOptions = {
@@ -37,7 +53,7 @@ const DEFAULT_OPTIONS: LoadOptions = {
 
 const VARIATION_DELIMS = ["|", "^", "~"];
 
-export function load(source: string | object, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
+export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
   const parsed = typeof source === "string" ? parseYaml(source) : source;
   const root = toSerialObject(parsed, "$");
@@ -67,13 +83,22 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
   }
 
   const handle: YamlchemyHandle = {
+    has,
     calc,
     calcAll,
     evaluate,
     raw,
+    fork,
   };
 
-  async function calc(path: string): Promise<SerialValue> {
+  function has(path: string): boolean {
+    return hasPath(root, path);
+  }
+
+  async function calc(path: string, vars: LocalVars = {}): Promise<SerialValue> {
+    if (hasVars(vars)) {
+      return fork({ params: vars }).calc(path);
+    }
     if (path.trim() === "") {
       return calcAll();
     }
@@ -87,14 +112,17 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
       throw new Error(`Circular calc path: ${path}`);
     }
     active.add(path);
-    const value = await calcValue(safeGet(root, path), path, {});
+    const value = await calcValue(safeGet(root, path), path, vars);
     active.delete(path);
     setViewPath(view, path, value);
     done.add(path);
     return value;
   }
 
-  async function calcAll(): Promise<SerialObject> {
+  async function calcAll(vars: LocalVars = {}): Promise<SerialObject> {
+    if (hasVars(vars)) {
+      return fork({ params: vars }).calcAll();
+    }
     for (const key of Object.keys(root)) {
       await calc(key);
     }
@@ -108,8 +136,21 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
     return safeGet(root, path);
   }
 
-  async function evaluate(expr: string): Promise<SerialValue> {
-    return evaluateExpr(expr, {});
+  async function evaluate(expr: string, vars: LocalVars = {}): Promise<SerialValue> {
+    if (hasVars(vars)) {
+      return fork({ params: vars }).evaluate(expr);
+    }
+    return evaluateExpr(expr, vars);
+  }
+
+  function fork(next: Partial<LoadOptions> = {}): YamlchemyHandle {
+    return load(source, {
+      ...options,
+      ...next,
+      params: { ...options.params, ...(next.params ?? {}) },
+      fn: { ...options.fn, ...(next.fn ?? {}) },
+      io: { ...options.io, ...(next.io ?? {}) },
+    });
   }
 
   async function calcValue(value: SerialValue, path: string, vars: LocalVars): Promise<SerialValue> {
@@ -300,6 +341,10 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
   return handle;
 }
 
+function hasVars(vars: LocalVars): boolean {
+  return Object.keys(vars).length > 0;
+}
+
 function createBaseFunctionMap(funcs: Record<string, ExprEvalFunc>): Record<string, ExprEvalFunc> {
   return {
     first: (value) => (Array.isArray(value) ? (value[0] ?? null) : null),
@@ -364,6 +409,9 @@ function toSerialValue(value: unknown, path: string): SerialValue {
   if (value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
     const out: SerialObject = {};
     for (const [key, val] of Object.entries(value)) {
+      if (!isValidKey(key)) {
+        throw new Error(`Invalid key at ${path}: ${key}`);
+      }
       out[key] = toSerialValue(val, joinPath(path, key));
     }
     return out;

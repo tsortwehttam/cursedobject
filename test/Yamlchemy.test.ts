@@ -79,14 +79,33 @@ missingMany: -> select("people.*.missing")
   assert.deepEqual(await yam.evaluate("select('people.*.score')"), [11, 7]);
   assert.equal(await yam.evaluate("get('people.9.name')"), null);
   assert.equal(yam.raw("bar"), "bum");
+  assert.equal(yam.has("people.0.name"), true);
+  assert.equal(yam.has("people.9.name"), false);
 
   const all = await yam.calcAll();
   assert.equal(all.bar, "bum");
   assert.deepEqual(all.meow, { a: "4", b: "ho" });
 
+  const scoped = load(`
+name: Ada
+greeting: Hello {{ name }}
+alias: "{{ get('self.name') }}"
+`);
+  assert.equal(await scoped.calc("greeting"), "Hello Ada");
+  assert.equal(await scoped.calc("greeting", { name: "Grace" }), "Hello Grace");
+  assert.equal(await scoped.evaluate("name", { name: "Grace" }), "Grace");
+  assert.equal(await scoped.calc("greeting"), "Hello Ada");
+  assert.equal(await scoped.calc("alias", { self: { name: "Lovelace" } }), "Lovelace");
+  assert.deepEqual(await scoped.calcAll({ name: "Grace" }), { name: "Ada", greeting: "Hello Grace", alias: "" });
+
+  const forked = scoped.fork({ params: { name: "Katherine" } });
+  assert.equal(await forked.calc("greeting"), "Hello Katherine");
+  assert.equal(await scoped.calc("greeting"), "Hello Ada");
+
   await assert.rejects(() => load("bad: '{{missing}}'").calc("bad"), /Unknown variable 'missing'/);
   await assert.rejects(() => yam.evaluate("missing + 1"), /Unknown variable 'missing'/);
   await assert.rejects(() => load("bad: '<<#missing ok>>'").calc("bad"), /Unknown io directive: missing/);
+  assert.throws(() => load({ constructor: "bad" }), /Invalid key/);
 }
 
 void main();

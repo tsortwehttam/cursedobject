@@ -44,6 +44,8 @@ await yam.calc("greeting"); // "Hello Ada"
 await yam.calc("score"); // 3
 await yam.calc("allNames"); // ["Ada", "Grace"]
 await yam.evaluate("get('names.0')"); // "Ada"
+await yam.calc("greeting", { name: "Grace" }); // "Hello Grace"
+yam.has("names.0"); // true
 yam.raw("greeting"); // "Hello {{name}}"
 await yam.calcAll();
 ```
@@ -60,7 +62,7 @@ await yam.calcAll();
 - `<<#name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing.
 - `{{#if expr}}...{{elseif expr}}...{{else}}...{{/if}}` renders the first matching block.
 
-`calc(path)`, `calcAll()`, and `evaluate(expr)` are async. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths, bad expressions, unknown variables, unknown directives, and circular dependencies throw.
+`calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths, bad expressions, unknown variables, unknown directives, and circular dependencies throw.
 
 ## License
 
