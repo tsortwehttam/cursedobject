@@ -114,6 +114,9 @@ export function load(source: string | object, opts: Partial<LoadOptions> = {}): 
 
   async function calcValue(value: SerialValue, path: string, vars: LocalVars): Promise<SerialValue> {
     if (typeof value === "string") {
+      if (isPlainString(value)) {
+        return value;
+      }
       const expr = readArrowExpr(value);
       if (expr !== null) {
         return evaluateExpr(expr, vars);
@@ -366,6 +369,22 @@ function toSerialValue(value: unknown, path: string): SerialValue {
     return out;
   }
   throw new Error(`Unsupported YAML value at ${path}`);
+}
+
+function isPlainString(value: string): boolean {
+  if (value.length < 4) {
+    return true;
+  }
+  if (value.indexOf("{{") >= 0) return false;
+  if (value.indexOf("<<#") >= 0) return false;
+  let i = 0;
+  while (i < value.length) {
+    const ch = value.charCodeAt(i);
+    if (ch !== 32 && ch !== 9 && ch !== 10 && ch !== 13) break;
+    i += 1;
+  }
+  if (value.charCodeAt(i) === 45 && value.charCodeAt(i + 1) === 62) return false;
+  return true;
 }
 
 function readArrowExpr(value: string): string | null {
