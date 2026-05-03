@@ -16,6 +16,7 @@ names:
   - Ada
   - Grace
 firstName: "{{get('names.0')}}"
+loud: "{{shout(name)}}"
 allNames: -> select("names.*")
 line: |
   <<#lookup:result name Ada>>
@@ -27,9 +28,13 @@ line: |
 `,
   {
     seed: 123,
+    fn: {
+      shout: (s) => String(s).toUpperCase(),
+    },
     io: {
-      lookup(params) {
-        return params.pairs.name === "Ada" ? "ok" : "no";
+      async lookup(params) {
+        const row = await db.find(params.pairs.name);
+        return row ? "ok" : "no";
       },
     },
   },
@@ -50,7 +55,8 @@ await yam.calcAll();
 - `select("path.*.value")` reads calculated wildcard matches and always returns an array. `*` matches one object key or array index.
 - `{{cool|great|amazing}}` picks one variation with the seeded PRNG. Bare `|`, `^`, and `~` separators are treated as variation delimiters when the parts look like plain text.
 - `-> expr` makes a string value calculate directly to the expression value.
-- `<<#name args>>` calls `opts.io.name(params, handle)` and inserts the result.
+- `opts.fn` registers sync helpers callable from `{{...}}` expressions (e.g. `shout(name)`).
+- `<<#name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result.
 - `<<#name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing.
 - `{{#if expr}}...{{elseif expr}}...{{else}}...{{/if}}` renders the first matching block.
 
