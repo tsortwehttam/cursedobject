@@ -104,6 +104,7 @@ attraction: -> emotions[actor.id].attraction
   assert.equal(await dynamic.calc("score", { other: { index: 1 } }), 7);
   assert.equal(await dynamic.calc("attraction", { actor: { id: "Ada" } }), 0.7);
   assert.equal(await dynamic.evaluate("emotions[actor.id].attraction", { actor: { id: "Ada" } }), 0.7);
+  assert.equal(await dynamic.evaluate('emotions["Ada"].attraction'), 0.7);
 
   const scoped = load(`
 name: Ada

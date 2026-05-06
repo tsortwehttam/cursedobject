@@ -299,7 +299,9 @@ export function parseExprCore(expr: string): Expr | null {
         advance();
         const key = advance();
         if (key?.type !== "WRD") return null;
-        left = { op: "member", args: [left, { lit: key.value }] };
+        for (const part of key.value.split(".")) {
+          left = { op: "member", args: [left, { lit: part }] };
+        }
         continue;
       }
       break;
