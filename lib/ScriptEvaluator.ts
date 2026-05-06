@@ -1,5 +1,5 @@
 import { SerialValue } from "./CoreTypings";
-import { castToNumber, isTruthy, safeGet, TVars } from "./EvalCasting";
+import { castToNumber, isTruthy, isValidKey, safeGet, TVars } from "./EvalCasting";
 import { parseNumberOrNull } from "./MathHelpers";
 import { PRNG } from "./RandHelpers";
 import { isBlank } from "./TextHelpers";
@@ -186,7 +186,7 @@ export function parseExprCore(expr: string): Expr | null {
         advance();
         const value = parseExpr(UNARY_PREC);
         if (!value) return null;
-        return { op: alias, args: [value] };
+        return parsePostfix({ op: alias, args: [value] });
       }
 
       if (tok.value === "(") {
@@ -194,7 +194,7 @@ export function parseExprCore(expr: string): Expr | null {
         const inner = parseExpr(0);
         if (!inner) return null;
         if (!expect(")")) return null;
-        return inner;
+        return parsePostfix(inner);
       }
 
       if (tok.value === "[") {
@@ -208,7 +208,7 @@ export function parseExprCore(expr: string): Expr | null {
           else if (peek()?.value !== "]") return null;
         }
         if (!expect("]")) return null;
-        return { op: "array", args };
+        return parsePostfix({ op: "array", args });
       }
 
       if (tok.value === "{") {
@@ -226,7 +226,7 @@ export function parseExprCore(expr: string): Expr | null {
           else if (peek()?.value !== "}") return null;
         }
         if (!expect("}")) return null;
-        return { op: "object", args };
+        return parsePostfix({ op: "object", args });
       }
 
       return null;
@@ -234,12 +234,12 @@ export function parseExprCore(expr: string): Expr | null {
 
     if (tok.type === "NUM") {
       advance();
-      return { lit: Number(tok.value) };
+      return parsePostfix({ lit: Number(tok.value) });
     }
 
     if (tok.type === "QUO") {
       advance();
-      return { lit: tok.value };
+      return parsePostfix({ lit: tok.value });
     }
 
     if (tok.type === "WRD") {
@@ -274,13 +274,37 @@ export function parseExprCore(expr: string): Expr | null {
           else if (peek()?.value !== ")") return null;
         }
         if (!expect(")")) return null;
-        return { op: val, args };
+        return parsePostfix({ op: val, args });
       }
 
-      return { var: val };
+      return parsePostfix({ var: val });
     }
 
     return null;
+  }
+
+  function parsePostfix(base: Expr): Expr | null {
+    let left = base;
+    while (true) {
+      const tok = peek();
+      if (tok?.type === "PCT" && tok.value === "[") {
+        advance();
+        const key = parseExpr(0);
+        if (!key) return null;
+        if (!expect("]")) return null;
+        left = { op: "index", args: [left, key] };
+        continue;
+      }
+      if (tok?.type === "PCT" && tok.value === ".") {
+        advance();
+        const key = advance();
+        if (key?.type !== "WRD") return null;
+        left = { op: "member", args: [left, { lit: key.value }] };
+        continue;
+      }
+      break;
+    }
+    return left;
   }
 
   const result = parseExpr(0);
@@ -323,6 +347,9 @@ export function evaluateExprCore(ast: Expr, vars: TVars, funcs: Record<string, E
         if (typeof key === "string") result[key] = val;
       }
       return result;
+    }
+    if (op === "member" || op === "index") {
+      return readMember(eval_(args[0]), eval_(args[1]));
     }
 
     const fn = lib[op];
@@ -375,7 +402,23 @@ const STDLIB: Record<string, ExprEvalFunc> = {
   nullCoalesce: () => null,
   array: () => null,
   object: () => null,
+  member: () => null,
+  index: () => null,
 };
+
+function readMember(value: SerialValue, key: SerialValue): SerialValue {
+  if (value === null || value === undefined) return null;
+  if (typeof key !== "string" && typeof key !== "number") return null;
+  const name = String(key);
+  if (!isValidKey(name)) return null;
+  if (Array.isArray(value)) {
+    const idx = Number.parseInt(name, 10);
+    if (Number.isNaN(idx)) return null;
+    return value[idx] ?? null;
+  }
+  if (typeof value !== "object") return null;
+  return Object.prototype.hasOwnProperty.call(value, name) ? value[name] ?? null : null;
+}
 
 export type ExprError = {
   type: "op-undefined" | "var-undefined";

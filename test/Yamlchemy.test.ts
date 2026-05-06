@@ -40,6 +40,7 @@ directName: "{{people.0.name}}"
 firstName: "{{get('people.0.name')}}"
 missingOne: -> get("people.9.name")
 missingMany: -> select("people.*.missing")
+dynamicName: -> people[1].name
 `,
     {
       seed: 123,
@@ -74,8 +75,10 @@ missingMany: -> select("people.*.missing")
   assert.equal(await yam.calc("firstName"), "bum");
   assert.equal(await yam.calc("missingOne"), null);
   assert.deepEqual(await yam.calc("missingMany"), []);
+  assert.equal(await yam.calc("dynamicName"), "Ada");
   assert.equal(await yam.evaluate("foo + blah"), 4);
   assert.equal(await yam.evaluate("people.0.name"), "bum");
+  assert.equal(await yam.evaluate("people[1].name"), "Ada");
   assert.deepEqual(await yam.evaluate("select('people.*.score')"), [11, 7]);
   assert.equal(await yam.evaluate("get('people.9.name')"), null);
   assert.equal(yam.raw("bar"), "bum");
@@ -85,6 +88,22 @@ missingMany: -> select("people.*.missing")
   const all = await yam.calcAll();
   assert.equal(all.bar, "bum");
   assert.deepEqual(all.meow, { a: "4", b: "ho" });
+
+  const dynamic = load(`
+people:
+  - name: Grace
+    score: 11
+  - name: Ada
+    score: 7
+emotions:
+  Ada:
+    attraction: 0.7
+score: -> people[other.index].score
+attraction: -> emotions[actor.id].attraction
+`);
+  assert.equal(await dynamic.calc("score", { other: { index: 1 } }), 7);
+  assert.equal(await dynamic.calc("attraction", { actor: { id: "Ada" } }), 0.7);
+  assert.equal(await dynamic.evaluate("emotions[actor.id].attraction", { actor: { id: "Ada" } }), 0.7);
 
   const scoped = load(`
 name: Ada
