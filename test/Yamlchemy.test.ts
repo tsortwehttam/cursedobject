@@ -103,6 +103,42 @@ alias: "{{ get('self.name') }}"
   assert.equal(await forked.calc("greeting"), "Hello Katherine");
   assert.equal(await scoped.calc("greeting"), "Hello Ada");
 
+  const mut = load(
+    `
+relations:
+  sarah:
+    emotions:
+      anger: 1
+      arousal: 0
+emotions:
+  arousal: 1
+`,
+    {
+      fn: { incr: (n: SerialValue) => Number(n) + 1 },
+    },
+  );
+  await mut.update(
+    {
+      "relations.{{other}}.emotions.arousal": "-> incr(this)",
+      emotions: { arousal: "-> incr(this) + 2.5" },
+    },
+    { other: "sarah" },
+  );
+  assert.equal(await mut.calc("relations.sarah.emotions.arousal"), 1);
+  assert.equal(await mut.calc("emotions.arousal"), 4.5);
+
+  await mut.update({ "relations.*.emotions.anger": "-> this + 10" });
+  assert.equal(await mut.calc("relations.sarah.emotions.anger"), 11);
+
+  await assert.rejects(() => mut.update({ nope: 1 }), /Unknown update path/);
+  await mut.update({ nested: { brand: "new" } }, {}, { create: true });
+  assert.equal(await mut.calc("nested.brand"), "new");
+
+  mut.clear();
+  assert.equal(await mut.calc("emotions.arousal"), 1);
+  assert.equal(await mut.calc("relations.sarah.emotions.anger"), 1);
+  assert.equal(mut.has("nested.brand"), false);
+
   await assert.rejects(() => load("bad: '{{missing}}'").calc("bad"), /Unknown variable 'missing'/);
   await assert.rejects(() => yam.evaluate("missing + 1"), /Unknown variable 'missing'/);
   await assert.rejects(() => load("bad: '<<#missing ok>>'").calc("bad"), /Unknown io directive: missing/);

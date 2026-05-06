@@ -20,6 +20,10 @@ export type LoadOptions = {
 type LocalVars = Record<string, SerialValue>;
 type IfBranch = { expr: string | null; body: string; end: number };
 
+export type UpdatePatchValue = SerialValue | UpdatePatch;
+export type UpdatePatch = { [key: string]: UpdatePatchValue };
+export type UpdateOptions = { create: boolean };
+
 export type YamlchemyIoFunc = (params: MarshalledParams, handle: YamlchemyHandle) => Promise<SerialValue> | SerialValue;
 
 export type YamlchemyHandle = {
@@ -37,6 +41,12 @@ export type YamlchemyHandle = {
     (expr: string, vars: Record<string, SerialValue>): Promise<SerialValue>;
   };
   raw(path: string): SerialValue;
+  update: {
+    (patch: UpdatePatch): Promise<void>;
+    (patch: UpdatePatch, vars: Record<string, SerialValue>): Promise<void>;
+    (patch: UpdatePatch, vars: Record<string, SerialValue>, opts: Partial<UpdateOptions>): Promise<void>;
+  };
+  clear(): void;
   fork: {
     (): YamlchemyHandle;
     (opts: Partial<LoadOptions>): YamlchemyHandle;
@@ -58,6 +68,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   const parsed = typeof source === "string" ? parseYaml(source) : source;
   const root = toSerialObject(parsed, "$");
   const rng = createPRNG(options.seed, options.cycle);
+  const state: SerialObject = cloneSerial(root) as SerialObject;
   const view: SerialObject = cloneSerial(root) as SerialObject;
   const active = new Set<string>();
   const funcs = createBaseFunctionMap(options.fn);
@@ -87,32 +98,34 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     calcAll,
     evaluate,
     raw,
+    update,
+    clear,
     fork,
   };
 
   function has(path: string): boolean {
-    return hasPath(root, path);
+    return hasPath(state, path);
   }
 
   async function calc(path: string, vars: LocalVars = {}): Promise<SerialValue> {
     if (path.trim() === "") {
       return calcAll(vars);
     }
-    if (!hasPath(root, path)) {
+    if (!hasPath(state, path)) {
       throw new Error(`Unknown path: ${path}`);
     }
     if (active.has(path)) {
       throw new Error(`Circular calc path: ${path}`);
     }
     active.add(path);
-    const value = await calcValue(safeGet(root, path), path, vars);
+    const value = await calcValue(safeGet(state, path), path, vars);
     active.delete(path);
     setViewPath(view, path, value);
     return value;
   }
 
   async function calcAll(vars: LocalVars = {}): Promise<SerialObject> {
-    for (const key of Object.keys(root)) {
+    for (const key of Object.keys(state)) {
       await calc(key, vars);
     }
     return view;
@@ -127,6 +140,55 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
 
   async function evaluate(expr: string, vars: LocalVars = {}): Promise<SerialValue> {
     return evaluateExpr(expr, vars);
+  }
+
+  async function update(patch: UpdatePatch, vars: LocalVars = {}, opts: Partial<UpdateOptions> = {}): Promise<void> {
+    const create = opts.create ?? false;
+    const entries = flattenPatch(patch);
+    type Pending = { path: string; rhs: SerialValue; cur: SerialValue };
+    const pending: Pending[] = [];
+    for (const [keyTpl, rhs] of entries) {
+      const keyPath = await renderText(keyTpl, vars);
+      const targets = keyPath.includes("*") ? matchPaths(state, keyPath) : [keyPath];
+      if (targets.length === 0 && keyPath.includes("*")) {
+        continue;
+      }
+      for (const path of targets) {
+        const exists = hasPath(state, path);
+        if (!exists && !create) {
+          throw new Error(`Unknown update path: ${path}`);
+        }
+        pending.push({ path, rhs, cur: exists ? await calc(path, vars) : null });
+      }
+    }
+    for (const { path, rhs, cur } of pending) {
+      const next = await evalUpdateValue(rhs, { ...vars, this: cur });
+      if (create && !hasPath(state, path)) {
+        ensureViewPath(state, path);
+        ensureViewPath(view, path);
+      }
+      setViewPath(state, path, next);
+      setViewPath(view, path, next);
+    }
+  }
+
+  async function evalUpdateValue(rhs: SerialValue, vars: LocalVars): Promise<SerialValue> {
+    if (typeof rhs !== "string") {
+      return rhs;
+    }
+    if (isPlainString(rhs)) {
+      return rhs;
+    }
+    const expr = readArrowExpr(rhs);
+    if (expr !== null) {
+      return evaluateExpr(expr, vars);
+    }
+    return renderText(rhs, vars);
+  }
+
+  function clear(): void {
+    resetObject(state, cloneSerial(root) as SerialObject);
+    resetObject(view, cloneSerial(root) as SerialObject);
   }
 
   function fork(next: Partial<LoadOptions> = {}): YamlchemyHandle {
@@ -274,19 +336,19 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   async function calcDependencies(ast: Expr, vars: LocalVars): Promise<void> {
     const deps = new Set<string>();
     walkExpr(ast, (node) => {
-      if ("var" in node && !hasPath(vars, node.var) && hasPath(root, node.var)) {
+      if ("var" in node && !hasPath(vars, node.var) && hasPath(state, node.var)) {
         deps.add(node.var);
       }
       if ("op" in node && node.op === "get") {
         const path = readLiteralPath(node);
-        if (path && hasPath(root, path)) {
+        if (path && hasPath(state, path)) {
           deps.add(path);
         }
       }
       if ("op" in node && node.op === "select") {
         const pattern = readLiteralPath(node);
         if (pattern) {
-          for (const path of matchPaths(root, pattern)) {
+          for (const path of matchPaths(state, pattern)) {
             deps.add(path);
           }
         }
@@ -543,6 +605,45 @@ function looksLikeVariationPart(part: string): boolean {
     return true;
   }
   return !/[()+*/<>=?:,;[\]{}]/.test(part);
+}
+
+function resetObject(target: SerialObject, fresh: SerialObject): void {
+  for (const key of Object.keys(target)) {
+    delete target[key];
+  }
+  for (const key of Object.keys(fresh)) {
+    target[key] = fresh[key];
+  }
+}
+
+function flattenPatch(patch: UpdatePatch, prefix = ""): [string, SerialValue][] {
+  const out: [string, SerialValue][] = [];
+  for (const key of Object.keys(patch)) {
+    const value = patch[key];
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (isPlainObj(value as SerialValue | undefined)) {
+      out.push(...flattenPatch(value as UpdatePatch, path));
+      continue;
+    }
+    out.push([path, value as SerialValue]);
+  }
+  return out;
+}
+
+function ensureViewPath(root: SerialObject, path: string): void {
+  const parts = path.split(".");
+  let cur: SerialObject = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const part = parts[i]!;
+    const next = cur[part];
+    if (isPlainObj(next)) {
+      cur = next;
+      continue;
+    }
+    const fresh: SerialObject = {};
+    cur[part] = fresh;
+    cur = fresh;
+  }
 }
 
 function setViewPath(root: SerialObject, path: string, value: SerialValue): void {
