@@ -143,7 +143,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   async function update(patch: UpdatePatch, vars: LocalVars = {}, opts: Partial<UpdateOptions> = {}): Promise<void> {
-    const create = opts.create ?? false;
+    const create = opts.create ?? true;
     const entries = flattenPatch(patch);
     type Pending = { path: string; rhs: SerialValue; cur: SerialValue };
     const pending: Pending[] = [];

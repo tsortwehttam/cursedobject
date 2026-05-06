@@ -130,8 +130,8 @@ emotions:
   await mut.update({ "relations.*.emotions.anger": "-> this + 10" });
   assert.equal(await mut.calc("relations.sarah.emotions.anger"), 11);
 
-  await assert.rejects(() => mut.update({ nope: 1 }), /Unknown update path/);
-  await mut.update({ nested: { brand: "new" } }, {}, { create: true });
+  await assert.rejects(() => mut.update({ nope: 1 }, {}, { create: false }), /Unknown update path/);
+  await mut.update({ nested: { brand: "new" } });
   assert.equal(await mut.calc("nested.brand"), "new");
 
   mut.clear();
