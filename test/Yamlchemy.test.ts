@@ -19,6 +19,8 @@ inline: Hi <<#echo name Ada; title Dr>>
 inline2: Hi <<echo name Ada; title Dr>>
 loneObj: <<obj>>
 loneArr: <<arr>>
+dotted: <<react.emotions>>
+dottedDeep: <<a.b.c>>
 embedObj: "got: <<obj>>"
 bound: |
   <<#score:result 7>>
@@ -66,6 +68,12 @@ dynamicName: -> people[1].name
         arr() {
           return [1, 2, 3];
         },
+        "react.emotions"() {
+          return { joy: 1 };
+        },
+        "a.b.c"() {
+          return "deep";
+        },
       },
     },
   );
@@ -79,6 +87,8 @@ dynamicName: -> people[1].name
   assert.equal(await yam.calc("inline2"), "Hi Dr Ada");
   assert.deepEqual(await yam.calc("loneObj"), { a: 1, b: [2, 3] });
   assert.deepEqual(await yam.calc("loneArr"), [1, 2, 3]);
+  assert.deepEqual(await yam.calc("dotted"), { joy: 1 });
+  assert.equal(await yam.calc("dottedDeep"), "deep");
   assert.equal(await yam.calc("embedObj"), 'got: {"a":1,"b":[2,3]}');
   assert.equal(String(await yam.calc("bound")).trim(), "high bum");
   assert.equal(await yam.calc("braced"), "{yes}");

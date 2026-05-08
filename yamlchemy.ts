@@ -290,7 +290,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     if (!token) {
       throw new Error(`Unclosed directive at ${start}`);
     }
-    const match = token.body.match(/^#?([A-Za-z_$][\w$]*)(?::([A-Za-z_$][\w$]*))?(?:\s+([\s\S]*))?$/);
+    const match = token.body.match(/^#?([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)(?::([A-Za-z_$][\w$]*))?(?:\s+([\s\S]*))?$/);
     if (!match) {
       throw new Error(`Invalid directive: ${token.raw}`);
     }
