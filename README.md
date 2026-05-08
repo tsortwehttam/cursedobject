@@ -67,8 +67,8 @@ yam.clear();
 - `{{cool|great|amazing}}` picks one variation with the seeded PRNG. Bare `|`, `^`, and `~` separators are treated as variation delimiters when the parts look like plain text.
 - `-> expr` makes a string value calculate directly to the expression value.
 - `opts.fn` registers sync helpers callable from `{{...}}` expressions (e.g. `shout(name)`).
-- `<<name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result. The legacy `<<#name args>>` form still works.
-- `<<name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing.
+- `<<name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result. The legacy `<<#name args>>` form still works. When the field value is a single directive with no surrounding text (e.g. `field: <<lookup id 7>>`), the raw return value is preserved — objects, arrays, numbers, etc. pass through unchanged. When embedded in a larger string, the result is stringified (objects/arrays via `JSON.stringify`).
+- `<<name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing. The binding holds the raw value, so subsequent `{{binding}}` or `{{binding.field}}` expressions can read object/array fields directly.
 - `{{#if expr}}...{{elseif expr}}...{{else}}...{{/if}}` renders the first matching block.
 
 `calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths, bad expressions, unknown variables, unknown directives, and circular dependencies throw.

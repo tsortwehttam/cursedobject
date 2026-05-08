@@ -210,6 +210,8 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       if (expr !== null) {
         return evaluateExpr(expr, vars);
       }
+      const lone = await tryLoneDirective(value, vars);
+      if (lone.hit) return lone.value;
       return renderText(value, vars);
     }
     if (Array.isArray(value)) {
@@ -283,7 +285,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     return evaluateExpr(await renderTemplates(body, vars), vars);
   }
 
-  async function renderDirective(text: string, start: number, vars: LocalVars): Promise<{ text: string; end: number }> {
+  async function executeDirective(text: string, start: number, vars: LocalVars): Promise<{ value: SerialValue; binding: string; end: number }> {
     const token = readTemplateToken(text, start, "<<", ">>", false, false);
     if (!token) {
       throw new Error(`Unclosed directive at ${start}`);
@@ -301,11 +303,27 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     }
     const params = marshallParams(args, (expr) => evalParam(expr, vars));
     const value = await fn(params, handle);
-    if (binding) {
-      vars[binding] = value;
-      return { text: "", end: token.end };
+    return { value, binding, end: token.end };
+  }
+
+  async function renderDirective(text: string, start: number, vars: LocalVars): Promise<{ text: string; end: number }> {
+    const r = await executeDirective(text, start, vars);
+    if (r.binding) {
+      vars[r.binding] = r.value;
+      return { text: "", end: r.end };
     }
-    return { text: castToString(value), end: token.end };
+    return { text: castToString(r.value), end: r.end };
+  }
+
+  async function tryLoneDirective(value: string, vars: LocalVars): Promise<{ hit: boolean; value: SerialValue }> {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("<<")) return { hit: false, value: null };
+    if (findDirectiveStart(trimmed, 0) !== 0) return { hit: false, value: null };
+    const token = readTemplateToken(trimmed, 0, "<<", ">>", false, false);
+    if (!token || token.end !== trimmed.length) return { hit: false, value: null };
+    const r = await executeDirective(trimmed, 0, vars);
+    if (r.binding) return { hit: false, value: null };
+    return { hit: true, value: r.value };
   }
 
   async function renderConditional(text: string, start: number, vars: LocalVars): Promise<{ text: string; end: number }> {

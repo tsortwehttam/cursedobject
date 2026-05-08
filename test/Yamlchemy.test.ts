@@ -17,6 +17,9 @@ longer: The distance is {{manhattan(123, 456, 789, 100)}}.
 choice: "{{cool|great|amazing}}"
 inline: Hi <<#echo name Ada; title Dr>>
 inline2: Hi <<echo name Ada; title Dr>>
+loneObj: <<obj>>
+loneArr: <<arr>>
+embedObj: "got: <<obj>>"
 bound: |
   <<#score:result 7>>
   {{#if result > 5}}
@@ -57,6 +60,12 @@ dynamicName: -> people[1].name
         score(params) {
           return params.artifacts[0];
         },
+        obj() {
+          return { a: 1, b: [2, 3] };
+        },
+        arr() {
+          return [1, 2, 3];
+        },
       },
     },
   );
@@ -68,6 +77,9 @@ dynamicName: -> people[1].name
   assert.match(String(await yam.calc("choice")), /^(cool|great|amazing)$/);
   assert.equal(await yam.calc("inline"), "Hi Dr Ada");
   assert.equal(await yam.calc("inline2"), "Hi Dr Ada");
+  assert.deepEqual(await yam.calc("loneObj"), { a: 1, b: [2, 3] });
+  assert.deepEqual(await yam.calc("loneArr"), [1, 2, 3]);
+  assert.equal(await yam.calc("embedObj"), 'got: {"a":1,"b":[2,3]}');
   assert.equal(String(await yam.calc("bound")).trim(), "high bum");
   assert.equal(await yam.calc("braced"), "{yes}");
   assert.deepEqual(await yam.calc("meow"), { a: "4", b: "ho" });
