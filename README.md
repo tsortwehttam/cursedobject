@@ -19,7 +19,7 @@ firstName: "{{get('names.0')}}"
 loud: "{{shout(name)}}"
 allNames: -> select("names.*")
 line: |
-  <<#lookup:result name Ada>>
+  <<lookup:result name Ada>>
   {{#if result == "ok"}}
     passed
   {{else}}
@@ -67,8 +67,8 @@ yam.clear();
 - `{{cool|great|amazing}}` picks one variation with the seeded PRNG. Bare `|`, `^`, and `~` separators are treated as variation delimiters when the parts look like plain text.
 - `-> expr` makes a string value calculate directly to the expression value.
 - `opts.fn` registers sync helpers callable from `{{...}}` expressions (e.g. `shout(name)`).
-- `<<#name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result.
-- `<<#name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing.
+- `<<name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result. The legacy `<<#name args>>` form still works.
+- `<<name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing.
 - `{{#if expr}}...{{elseif expr}}...{{else}}...{{/if}}` renders the first matching block.
 
 `calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths, bad expressions, unknown variables, unknown directives, and circular dependencies throw.

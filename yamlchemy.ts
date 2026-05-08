@@ -233,7 +233,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     let out = "";
     let loc = 0;
     while (loc < text.length) {
-      const directive = text.indexOf("<<#", loc);
+      const directive = findDirectiveStart(text, loc);
       const conditional = text.indexOf("{{#if", loc);
       const next = nextIndex(directive, conditional);
       if (next < 0) {
@@ -288,7 +288,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     if (!token) {
       throw new Error(`Unclosed directive at ${start}`);
     }
-    const match = token.body.match(/^#([A-Za-z_$][\w$]*)(?::([A-Za-z_$][\w$]*))?(?:\s+([\s\S]*))?$/);
+    const match = token.body.match(/^#?([A-Za-z_$][\w$]*)(?::([A-Za-z_$][\w$]*))?(?:\s+([\s\S]*))?$/);
     if (!match) {
       throw new Error(`Invalid directive: ${token.raw}`);
     }
@@ -463,12 +463,26 @@ function toSerialValue(value: unknown, path: string): SerialValue {
   throw new Error(`Unsupported YAML value at ${path}`);
 }
 
+function findDirectiveStart(text: string, from: number): number {
+  let loc = from;
+  while (loc < text.length) {
+    const idx = text.indexOf("<<", loc);
+    if (idx < 0) return -1;
+    const after = idx + 2;
+    const ch = text.charCodeAt(after);
+    if (ch === 35) return idx;
+    if ((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch === 95 || ch === 36) return idx;
+    loc = after;
+  }
+  return -1;
+}
+
 function isPlainString(value: string): boolean {
   if (value.length < 4) {
     return true;
   }
   if (value.indexOf("{{") >= 0) return false;
-  if (value.indexOf("<<#") >= 0) return false;
+  if (findDirectiveStart(value, 0) >= 0) return false;
   let i = 0;
   while (i < value.length) {
     const ch = value.charCodeAt(i);

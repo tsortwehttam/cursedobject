@@ -21,13 +21,13 @@ longer: The distance is {{manhattan(123, 456, 789, 100)}}.
 # Bare |, ^, and ~ separators work when all parts look like plain text.
 choice: "{{cool|great|amazing}}"
 
-# <<#name args>> calls an async io function and inserts its result.
-inline: Hi <<#echo name Ada; title Dr>>
+# <<name args>> calls an async io function and inserts its result.
+inline: Hi <<echo name Ada; title Dr>>
 
-# <<#name:binding args>> stores a local binding for the current block.
+# <<name:binding args>> stores a local binding for the current block.
 # {{#if}} conditionals use the same expression language as templates.
 bound: |
-  <<#score:result 7>>
+  <<score:result 7>>
   {{#if result > 5}}
     high {{bar}}
   {{elseif result == 5}}

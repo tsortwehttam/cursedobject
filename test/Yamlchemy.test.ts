@@ -16,6 +16,7 @@ blah: -> 1 + 2
 longer: The distance is {{manhattan(123, 456, 789, 100)}}.
 choice: "{{cool|great|amazing}}"
 inline: Hi <<#echo name Ada; title Dr>>
+inline2: Hi <<echo name Ada; title Dr>>
 bound: |
   <<#score:result 7>>
   {{#if result > 5}}
@@ -66,6 +67,7 @@ dynamicName: -> people[1].name
   assert.equal(await yam.calc("longer"), "The distance is 1022.");
   assert.match(String(await yam.calc("choice")), /^(cool|great|amazing)$/);
   assert.equal(await yam.calc("inline"), "Hi Dr Ada");
+  assert.equal(await yam.calc("inline2"), "Hi Dr Ada");
   assert.equal(String(await yam.calc("bound")).trim(), "high bum");
   assert.equal(await yam.calc("braced"), "{yes}");
   assert.deepEqual(await yam.calc("meow"), { a: "4", b: "ho" });
@@ -162,6 +164,8 @@ emotions:
   await assert.rejects(() => load("bad: '{{missing}}'").calc("bad"), /Unknown variable 'missing'/);
   await assert.rejects(() => yam.evaluate("missing + 1"), /Unknown variable 'missing'/);
   await assert.rejects(() => load("bad: '<<#missing ok>>'").calc("bad"), /Unknown io directive: missing/);
+  await assert.rejects(() => load("bad: '<<missing ok>>'").calc("bad"), /Unknown io directive: missing/);
+  assert.equal(await load("ok: 'a << b'").calc("ok"), "a << b");
   assert.throws(() => load({ constructor: "bad" }), /Invalid key/);
 }
 
