@@ -61,7 +61,7 @@ const DEFAULT_OPTIONS: LoadOptions = {
   io: {},
 };
 
-const VARIATION_DELIMS = ["|", "^", "~"];
+const VARIATION_MARKERS = new Set(["~", "&", "!"]);
 
 export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
@@ -577,11 +577,10 @@ function readIfTemplateBlock(text: string, start: number): { branches: IfBranch[
 }
 
 function splitVariation(body: string): string[] {
-  for (const delim of VARIATION_DELIMS) {
-    const parts = splitTopLevel(body, delim);
-    if (parts.length > 1 && parts.every(looksLikeVariationPart)) {
-      return parts;
-    }
+  const inner = VARIATION_MARKERS.has(body[0] ?? "") ? body.slice(1).trimStart() : body;
+  const parts = splitTopLevel(inner, "|");
+  if (parts.length > 1 && parts.every(looksLikeVariationPart)) {
+    return parts;
   }
   return [];
 }

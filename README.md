@@ -64,7 +64,7 @@ yam.clear();
 - `{{expr}}` evaluates expressions against YAML keys, params, local bindings, and built-in helpers.
 - `get("path.to.value")` reads one calculated path and returns `null` when missing.
 - `select("path.*.value")` reads calculated wildcard matches and always returns an array. `*` matches one object key or array index.
-- `{{cool|great|amazing}}` picks one variation with the seeded PRNG. Bare `|`, `^`, and `~` separators are treated as variation delimiters when the parts look like plain text.
+- `{{cool|great|amazing}}` picks one variation with the seeded PRNG. Parts split on `|` when they look like plain text. Optional Ink-style leading marker selects variation kind: `{{~A|B|C}}` random, `{{&A|B|C}}` cycle, `{{!A|B|C}}` once-only, default (no marker) sequence. All four currently resolve via the same seeded PRNG pick — markers are reserved for future visit-state-aware semantics.
 - `-> expr` makes a string value calculate directly to the expression value.
 - `opts.fn` registers sync helpers callable from `{{...}}` expressions (e.g. `shout(name)`).
 - `<<name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result. The legacy `<<#name args>>` form still works. When the field value is a single directive with no surrounding text (e.g. `field: <<lookup id 7>>`), the raw return value is preserved — objects, arrays, numbers, etc. pass through unchanged. When embedded in a larger string, the result is stringified (objects/arrays via `JSON.stringify`).

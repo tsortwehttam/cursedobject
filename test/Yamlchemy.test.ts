@@ -7,6 +7,8 @@ async function main() {
     `
 foo: 1
 bar: bum
+truthy: 1
+fallback: nope
 yay:
   - heave
   - ho
@@ -15,6 +17,11 @@ hooray: "{{last(yay)}}"
 blah: -> 1 + 2
 longer: The distance is {{manhattan(123, 456, 789, 100)}}.
 choice: "{{cool|great|amazing}}"
+choiceRand: "{{~cool|great|amazing}}"
+choiceCycle: "{{&cool|great|amazing}}"
+choiceOnce: "{{!cool|great|amazing}}"
+notExpr: "{{!truthy}}"
+notOrExpr: "{{!truthy || fallback}}"
 inline: Hi <<#echo name Ada; title Dr>>
 inline2: Hi <<echo name Ada; title Dr>>
 loneObj: <<obj>>
@@ -83,6 +90,11 @@ dynamicName: -> people[1].name
   assert.equal(await yam.calc("blah"), 3);
   assert.equal(await yam.calc("longer"), "The distance is 1022.");
   assert.match(String(await yam.calc("choice")), /^(cool|great|amazing)$/);
+  assert.match(String(await yam.calc("choiceRand")), /^(cool|great|amazing)$/);
+  assert.match(String(await yam.calc("choiceCycle")), /^(cool|great|amazing)$/);
+  assert.match(String(await yam.calc("choiceOnce")), /^(cool|great|amazing)$/);
+  assert.equal(await yam.calc("notExpr"), "false");
+  assert.equal(await yam.calc("notOrExpr"), "nope");
   assert.equal(await yam.calc("inline"), "Hi Dr Ada");
   assert.equal(await yam.calc("inline2"), "Hi Dr Ada");
   assert.deepEqual(await yam.calc("loneObj"), { a: 1, b: [2, 3] });
