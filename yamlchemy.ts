@@ -145,12 +145,13 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   async function update(patch: UpdatePatch, vars: LocalVars = {}, opts: Partial<UpdateOptions> = {}): Promise<void> {
     const create = opts.create ?? true;
     const entries = flattenPatch(patch);
-    type Pending = { path: string; rhs: SerialValue; cur: SerialValue };
+    type Pending = { path: string; rhs: SerialValue; cur: SerialValue; append: boolean };
     const pending: Pending[] = [];
     for (const [keyTpl, rhs] of entries) {
       const keyPath = await renderText(keyTpl, vars);
-      const targets = keyPath.includes("*") ? matchPaths(state, keyPath) : [keyPath];
-      if (targets.length === 0 && keyPath.includes("*")) {
+      const op = parseUpdatePath(keyPath);
+      const targets = op.path.includes("*") ? matchPaths(state, op.path) : [op.path];
+      if (targets.length === 0 && op.path.includes("*")) {
         continue;
       }
       for (const path of targets) {
@@ -158,11 +159,12 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
         if (!exists && !create) {
           throw new Error(`Unknown update path: ${path}`);
         }
-        pending.push({ path, rhs, cur: exists ? await calc(path, vars) : null });
+        pending.push({ path, rhs, cur: exists ? await calc(path, vars) : null, append: op.append });
       }
     }
-    for (const { path, rhs, cur } of pending) {
-      const next = await evalUpdateValue(rhs, { ...vars, this: cur });
+    for (const { path, rhs, cur, append } of pending) {
+      const val = await evalUpdateValue(rhs, { ...vars, this: cur });
+      const next = append ? appendValue(cur, val) : val;
       if (create && !hasPath(state, path)) {
         ensureViewPath(state, path);
         ensureViewPath(view, path);
@@ -652,13 +654,34 @@ function flattenPatch(patch: UpdatePatch, prefix = ""): [string, SerialValue][] 
   for (const key of Object.keys(patch)) {
     const value = patch[key];
     const path = prefix ? `${prefix}.${key}` : key;
-    if (isPlainObj(value as SerialValue | undefined)) {
+    if (!key.endsWith("+") && isPlainObj(value as SerialValue | undefined)) {
       out.push(...flattenPatch(value as UpdatePatch, path));
       continue;
     }
     out.push([path, value as SerialValue]);
   }
   return out;
+}
+
+function parseUpdatePath(path: string): { path: string; append: boolean } {
+  if (!path.endsWith("+")) return { path, append: false };
+  return { path: path.slice(0, -1), append: true };
+}
+
+function appendValue(cur: SerialValue, val: SerialValue): SerialValue {
+  if (cur === null) return val;
+  if (isPlainObj(cur) && isPlainObj(val)) {
+    const out: SerialObject = cloneSerial(cur) as SerialObject;
+    overlay(out, val);
+    return out;
+  }
+  if (Array.isArray(cur)) {
+    return cur.concat(Array.isArray(val) ? val : [val]);
+  }
+  if (typeof cur === "string") {
+    return cur + castToString(val);
+  }
+  return val;
 }
 
 function ensureViewPath(root: SerialObject, path: string): void {

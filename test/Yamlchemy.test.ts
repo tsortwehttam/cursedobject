@@ -189,6 +189,18 @@ emotions:
   await assert.rejects(() => mut.update({ nope: 1 }, {}, { create: false }), /Unknown update path/);
   await mut.update({ nested: { brand: "new" } });
   assert.equal(await mut.calc("nested.brand"), "new");
+  await mut.update({
+    "relations.sarah.emotions+": { trust: 0.4 },
+    "emotions.tags+": ["hungry"],
+    "emotions.note+": "hi",
+  });
+  await mut.update({
+    "emotions.tags+": ["wary"],
+    "emotions.note+": " there",
+  });
+  assert.deepEqual(await mut.calc("relations.sarah.emotions"), { anger: 11, arousal: 1, trust: 0.4 });
+  assert.deepEqual(await mut.calc("emotions.tags"), ["hungry", "wary"]);
+  assert.equal(await mut.calc("emotions.note"), "hi there");
 
   mut.clear();
   assert.equal(await mut.calc("emotions.arousal"), 1);
