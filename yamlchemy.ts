@@ -63,6 +63,15 @@ const DEFAULT_OPTIONS: LoadOptions = {
 
 const VARIATION_MARKERS = new Set(["~", "&", "!"]);
 
+type VariationKind = "sequence" | "cycle" | "random" | "once";
+
+function variationKind(marker: string): VariationKind {
+  if (marker === "&") return "cycle";
+  if (marker === "~") return "random";
+  if (marker === "!") return "once";
+  return "sequence";
+}
+
 export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
   const parsed = typeof source === "string" ? parseYaml(source) : source;
@@ -75,6 +84,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   const runner = createLoadedRunner(rng, {}, funcs);
   const baseFuncs = buildEvalFunctions({ ...createRandFunctions(rng), ...funcs });
   const astCache = new Map<string, Expr | null>();
+  const cycleCounters = new Map<string, number>();
 
   function parseCached(expr: string): Expr | null {
     if (astCache.has(expr)) {
@@ -150,6 +160,9 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     for (const [keyTpl, rhs] of entries) {
       const keyPath = await renderText(keyTpl, vars);
       const op = parseUpdatePath(keyPath);
+      if (!isValidPath(op.path)) {
+        throw new Error(`Invalid update path: ${op.path}`);
+      }
       const targets = op.path.includes("*") ? matchPaths(state, op.path) : [op.path];
       if (targets.length === 0 && op.path.includes("*")) {
         continue;
@@ -164,7 +177,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     }
     for (const { path, rhs, cur, append } of pending) {
       const val = await evalUpdateValue(rhs, { ...vars, this: cur });
-      const next = append ? appendValue(cur, val) : val;
+      const next = calcPatchValue(cur, val, append);
       if (create && !hasPath(state, path)) {
         ensureViewPath(state, path);
         ensureViewPath(view, path);
@@ -183,7 +196,8 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     }
     const expr = readArrowExpr(rhs);
     if (expr !== null) {
-      return evaluateExpr(expr, vars);
+      const rendered = expr.indexOf("{{") >= 0 ? await renderTemplates(expr, vars) : expr;
+      return evaluateExpr(rendered, vars);
     }
     return renderText(rhs, vars);
   }
@@ -210,7 +224,8 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       }
       const expr = readArrowExpr(value);
       if (expr !== null) {
-        return evaluateExpr(expr, vars);
+        const rendered = expr.indexOf("{{") >= 0 ? await renderTemplates(expr, vars) : expr;
+        return evaluateExpr(rendered, vars);
       }
       const lone = await tryLoneDirective(value, vars);
       if (lone.hit) return lone.value;
@@ -280,11 +295,21 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
 
   async function renderTemplateBody(body: string, vars: LocalVars): Promise<SerialValue> {
     const variation = splitVariation(body);
-    if (variation.length > 0) {
-      const choice = rng.randomElement(variation);
+    if (variation.parts.length > 0) {
+      const choice = pickVariation(body, variation.parts, variation.kind);
+      if (choice === null) return "";
       return renderTemplates(choice, vars);
     }
     return evaluateExpr(await renderTemplates(body, vars), vars);
+  }
+
+  function pickVariation(key: string, parts: string[], kind: VariationKind): string | null {
+    if (kind === "random") return rng.randomElement(parts);
+    const idx = cycleCounters.get(key) ?? 0;
+    cycleCounters.set(key, idx + 1);
+    if (kind === "cycle") return parts[idx % parts.length] ?? null;
+    if (kind === "once") return idx < parts.length ? parts[idx] ?? null : null;
+    return parts[Math.min(idx, parts.length - 1)] ?? null;
   }
 
   async function executeDirective(text: string, start: number, vars: LocalVars): Promise<{ value: SerialValue; binding: string; end: number }> {
@@ -578,13 +603,15 @@ function readIfTemplateBlock(text: string, start: number): { branches: IfBranch[
   throw new Error(`Missing {{/if}} for if block at ${start}`);
 }
 
-function splitVariation(body: string): string[] {
-  const inner = VARIATION_MARKERS.has(body[0] ?? "") ? body.slice(1).trimStart() : body;
+function splitVariation(body: string): { parts: string[]; kind: VariationKind } {
+  const marker = body[0] ?? "";
+  const hasMarker = VARIATION_MARKERS.has(marker);
+  const inner = hasMarker ? body.slice(1).trimStart() : body;
   const parts = splitTopLevel(inner, "|");
   if (parts.length > 1 && parts.every(looksLikeVariationPart)) {
-    return parts;
+    return { parts, kind: hasMarker ? variationKind(marker) : "sequence" };
   }
-  return [];
+  return { parts: [], kind: "sequence" };
 }
 
 function splitTopLevel(text: string, delim: string): string[] {
@@ -663,12 +690,21 @@ function flattenPatch(patch: UpdatePatch, prefix = ""): [string, SerialValue][] 
   return out;
 }
 
-function parseUpdatePath(path: string): { path: string; append: boolean } {
+export function parseUpdatePath(path: string): { path: string; append: boolean } {
   if (!path.endsWith("+")) return { path, append: false };
   return { path: path.slice(0, -1), append: true };
 }
 
-function appendValue(cur: SerialValue, val: SerialValue): SerialValue {
+export function setValueAtPath(root: SerialObject, raw: string, value: SerialValue): void {
+  const op = parseUpdatePath(raw);
+  if (!isValidPath(op.path)) return;
+  ensureViewPath(root, op.path);
+  const cur = hasPath(root, op.path) ? safeGet(root, op.path) : null;
+  setViewPath(root, op.path, calcPatchValue(cur, value, op.append));
+}
+
+export function calcPatchValue(cur: SerialValue, val: SerialValue, append: boolean): SerialValue {
+  if (!append) return val;
   if (cur === null) return val;
   if (isPlainObj(cur) && isPlainObj(val)) {
     const out: SerialObject = cloneSerial(cur) as SerialObject;
@@ -682,6 +718,11 @@ function appendValue(cur: SerialValue, val: SerialValue): SerialValue {
     return cur + castToString(val);
   }
   return val;
+}
+
+function isValidPath(path: string): boolean {
+  const parts = path.split(".").filter(Boolean);
+  return parts.length > 0 && parts.every(isValidKey);
 }
 
 function ensureViewPath(root: SerialObject, path: string): void {

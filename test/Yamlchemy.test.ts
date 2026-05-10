@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { SerialValue } from "../lib/CoreTypings";
-import { load } from "../yamlchemy";
+import { load, setValueAtPath } from "../yamlchemy";
 
 async function main() {
   const yam = load(
@@ -202,10 +202,44 @@ emotions:
   assert.deepEqual(await mut.calc("emotions.tags"), ["hungry", "wary"]);
   assert.equal(await mut.calc("emotions.note"), "hi there");
 
+  const patched = { obj: { a: 1 }, list: ["a"], text: "a" };
+  setValueAtPath(patched, "obj+", { b: 2 });
+  setValueAtPath(patched, "list+", ["b"]);
+  setValueAtPath(patched, "text+", "b");
+  assert.deepEqual(patched, { obj: { a: 1, b: 2 }, list: ["a", "b"], text: "ab" });
+
   mut.clear();
   assert.equal(await mut.calc("emotions.arousal"), 1);
   assert.equal(await mut.calc("relations.sarah.emotions.anger"), 1);
   assert.equal(mut.has("nested.brand"), false);
+
+  const variations = load(`
+cyc: "{{&a|b|c}}"
+seq: "{{x|y|z}}"
+once: "{{!p|q|r}}"
+`);
+  assert.equal(await variations.calc("cyc"), "a");
+  assert.equal(await variations.calc("cyc"), "b");
+  assert.equal(await variations.calc("cyc"), "c");
+  assert.equal(await variations.calc("cyc"), "a");
+  assert.equal(await variations.calc("seq"), "x");
+  assert.equal(await variations.calc("seq"), "y");
+  assert.equal(await variations.calc("seq"), "z");
+  assert.equal(await variations.calc("seq"), "z");
+  assert.equal(await variations.calc("once"), "p");
+  assert.equal(await variations.calc("once"), "q");
+  assert.equal(await variations.calc("once"), "r");
+  assert.equal(await variations.calc("once"), "");
+
+  const arrowTpl = load(`
+pick: -> '{{&grub|mott|skarn}}'
+gate: -> id == '{{&a|b|c}}'
+`);
+  assert.equal(await arrowTpl.calc("pick"), "grub");
+  assert.equal(await arrowTpl.calc("pick"), "mott");
+  assert.equal(await arrowTpl.calc("gate", { id: "a" }), true);
+  assert.equal(await arrowTpl.calc("gate", { id: "b" }), true);
+  assert.equal(await arrowTpl.calc("gate", { id: "x" }), false);
 
   await assert.rejects(() => load("bad: '{{missing}}'").calc("bad"), /Unknown variable 'missing'/);
   await assert.rejects(() => yam.evaluate("missing + 1"), /Unknown variable 'missing'/);
