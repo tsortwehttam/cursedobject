@@ -247,6 +247,19 @@ gate: -> id == '{{&a|b|c}}'
   await assert.rejects(() => load("bad: '<<missing ok>>'").calc("bad"), /Unknown io directive: missing/);
   assert.equal(await load("ok: 'a << b'").calc("ok"), "a << b");
   assert.throws(() => load({ constructor: "bad" }), /Invalid key/);
+
+  const fns = load({
+    sync: () => 42,
+    asyncNum: async () => 7,
+    asyncObj: async () => ({ a: 1, b: [2, 3] }),
+    tpl: () => "-> 1 + 2",
+    nested: { fn: async () => "deep" },
+  });
+  assert.equal(await fns.calc("sync"), 42);
+  assert.equal(await fns.calc("asyncNum"), 7);
+  assert.deepEqual(await fns.calc("asyncObj"), { a: 1, b: [2, 3] });
+  assert.equal(await fns.calc("tpl"), 3);
+  assert.deepEqual(await fns.calc("nested"), { fn: "deep" });
 }
 
 void main();

@@ -4,7 +4,9 @@ export type VectorValue = string[] | number[] | boolean[];
 
 export type SerialObject = { [key: string]: SerialValue };
 
-export type SerialValue = ScalarValue | SerialValue[] | SerialObject;
+export type LazyValue = () => SerialValue | Promise<SerialValue>;
+
+export type SerialValue = ScalarValue | SerialValue[] | SerialObject | LazyValue;
 
 export type JsonSchema = Record<string, unknown>;
 

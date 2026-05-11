@@ -218,6 +218,9 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   async function calcValue(value: SerialValue, path: string, vars: LocalVars): Promise<SerialValue> {
+    if (typeof value === "function") {
+      return calcValue(await value(), path, vars);
+    }
     if (typeof value === "string") {
       if (isPlainString(value)) {
         return value;
@@ -479,6 +482,9 @@ function toSerialObject(value: unknown, path: string): SerialObject {
 }
 
 function toSerialValue(value: unknown, path: string): SerialValue {
+  if (typeof value === "function") {
+    return value as SerialValue;
+  }
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return value;
   }
