@@ -241,8 +241,10 @@ gate: -> id == '{{&a|b|c}}'
   assert.equal(await arrowTpl.calc("gate", { id: "b" }), true);
   assert.equal(await arrowTpl.calc("gate", { id: "x" }), false);
 
-  await assert.rejects(() => load("bad: '{{missing}}'").calc("bad"), /Unknown variable 'missing'/);
-  await assert.rejects(() => yam.evaluate("missing + 1"), /Unknown variable 'missing'/);
+  assert.equal(await load("out: '{{missing}}'").calc("out"), "");
+  assert.equal(await yam.evaluate("missing"), null);
+  assert.equal(await yam.evaluate("missing ?? 1"), 1);
+  assert.equal(await yam.evaluate("missing + 1"), 1);
   await assert.rejects(() => load("bad: '<<#missing ok>>'").calc("bad"), /Unknown io directive: missing/);
   await assert.rejects(() => load("bad: '<<missing ok>>'").calc("bad"), /Unknown io directive: missing/);
   assert.equal(await load("ok: 'a << b'").calc("ok"), "a << b");

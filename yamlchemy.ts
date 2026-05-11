@@ -377,7 +377,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     }
     await calcDependencies(ast, vars);
     const all = mergedVars(vars);
-    assertKnownVars(ast, all, expr);
     return evaluateExprCore(ast, all, { ...baseFuncs, ...createPathFunctionMap(all) });
   }
 
@@ -414,14 +413,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       return null;
     }
     return evaluateExprCore(ast, all, { ...baseFuncs, ...createPathFunctionMap(all) });
-  }
-
-  function assertKnownVars(ast: Expr, vars: SerialObject, expr: string): void {
-    walkExpr(ast, (node) => {
-      if ("var" in node && !hasPath(vars, node.var)) {
-        throw new Error(`Unknown variable '${node.var}' in expression: ${expr}`);
-      }
-    });
   }
 
   function hasKnownVars(ast: Expr, vars: SerialObject): boolean {
