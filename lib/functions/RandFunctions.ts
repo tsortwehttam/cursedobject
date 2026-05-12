@@ -127,4 +127,51 @@ export const createRandFunctions = (prng: PRNG): Record<string, Method> => ({
     const shuffled = prng.shuffle(t);
     return shuffled.slice(0, size);
   },
+  /**
+   * Returns a random element from the array, with optional exclusion.
+   * Exclusion accepts a single value or an array of values to skip.
+   * Returns null if no candidates remain after exclusion.
+   * @name randDraw
+   * @param arr Array.
+   * @param exclude Optional value or array of values to exclude.
+   * @returns A random element from the filtered array, or null.
+   * @example randDraw(['a','b','c'], 'a') //=> 'b'
+   */
+  randDraw: (arr: A, exclude?: A) => {
+    const pool = toArr(arr);
+    if (!pool.length) return null;
+    const excludeSet = new Set((exclude == null ? [] : toArr(exclude)).map((v) => (v == null ? "" : String(v))));
+    const filtered = pool.filter((v) => !excludeSet.has(v == null ? "" : String(v)));
+    if (!filtered.length) return null;
+    return prng.randomElement(filtered);
+  },
+  /**
+   * Returns a random element from the array using parallel weights, with optional exclusion.
+   * weights[i] is the weight of arr[i]. Missing/non-numeric weights treated as 0.
+   * Returns null if no candidates remain after exclusion or all weights are zero.
+   * @name randWeightedPick
+   * @param arr Array of candidates.
+   * @param weights Parallel array of weights.
+   * @param exclude Optional value or array of values to exclude.
+   * @returns A weighted-random element, or null.
+   * @example randWeightedPick(['a','b','c'], [1,3,1]) //=> 'b' (most often)
+   */
+  randWeightedPick: (arr: A, weights: A, exclude?: A) => {
+    const pool = toArr(arr);
+    const w = toArr(weights);
+    if (!pool.length) return null;
+    const excludeSet = new Set((exclude == null ? [] : toArr(exclude)).map((v) => (v == null ? "" : String(v))));
+    const obj: Record<string, number> = {};
+    let total = 0;
+    pool.forEach((v, i) => {
+      if (excludeSet.has(v == null ? "" : String(v))) return;
+      const weight = num(w[i] ?? 0);
+      if (weight <= 0) return;
+      obj[String(i)] = weight;
+      total += weight;
+    });
+    if (total <= 0) return null;
+    const idx = Number(prng.weightedRandomKey(obj));
+    return pool[idx];
+  },
 });
