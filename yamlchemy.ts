@@ -41,6 +41,10 @@ export type YamlchemyHandle = {
     (expr: string, vars: Record<string, SerialValue>): Promise<SerialValue>;
   };
   raw(path: string): MixedValue;
+  resolve: {
+    (value: MixedValue): Promise<SerialValue>;
+    (value: MixedValue, vars: Record<string, SerialValue>): Promise<SerialValue>;
+  };
   peek: {
     (paths: string[]): Promise<SerialObject>;
     (paths: string[], vars: Record<string, SerialValue>): Promise<SerialObject>;
@@ -114,6 +118,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     calcAll,
     evaluate,
     raw,
+    resolve,
     peek,
     update,
     clear,
@@ -159,6 +164,10 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
 
   async function evaluate(expr: string, vars: LocalVars = {}): Promise<SerialValue> {
     return evaluateExpr(expr, vars);
+  }
+
+  async function resolve(value: MixedValue, vars: LocalVars = {}): Promise<SerialValue> {
+    return calcValue(value, "$resolve", vars);
   }
 
   async function peek(paths: string[], vars: LocalVars = {}): Promise<SerialObject> {

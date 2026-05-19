@@ -277,6 +277,18 @@ gate: -> id == '{{&a|b|c}}'
   const peeked = await peekHandle.peek(["a", "b.c", "nope"]);
   assert.deepEqual(peeked, { a: 1, "b.c": 2, nope: null });
 
+  const resolveHandle = load({ name: "Ada", count: 3 });
+  const resolved = await resolveHandle.resolve({
+    greeting: "Hello {{name}}",
+    doubled: "-> count * 2",
+    nested: ["-> count + 1", { lit: 42 }],
+  });
+  assert.deepEqual(resolved, {
+    greeting: "Hello Ada",
+    doubled: 6,
+    nested: [4, { lit: 42 }],
+  });
+
   const updHandle = load({ score: 5, tags: ["x"], info: { mood: "calm" } });
   const resolvedA = await updHandle.update({ score: "-> score + 1" });
   assert.deepEqual(resolvedA, { score: 6 });
