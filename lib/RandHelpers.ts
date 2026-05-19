@@ -110,6 +110,15 @@ export function createPRNG(seed: string | number, initialCycle: number = 0) {
     return cycle;
   }
 
+  function getState(): PRNGState {
+    return { state, cycle };
+  }
+
+  function setState(s: PRNGState): void {
+    state = s.state;
+    cycle = s.cycle;
+  }
+
   return {
     next,
     randAlphaNum,
@@ -126,5 +135,9 @@ export function createPRNG(seed: string | number, initialCycle: number = 0) {
     weightedRandomKey,
     shuffle,
     getCycle,
+    getState,
+    setState,
   };
 }
+
+export type PRNGState = { state: number; cycle: number };

@@ -262,6 +262,28 @@ gate: -> id == '{{&a|b|c}}'
   assert.deepEqual(await fns.calc("asyncObj"), { a: 1, b: [2, 3] });
   assert.equal(await fns.calc("tpl"), 3);
   assert.deepEqual(await fns.calc("nested"), { fn: "deep" });
+
+  const rngHandle = load({ a: "-> getRandInt(1,1000)" }, { seed: "abc" });
+  const before = rngHandle.rng.getState();
+  const first = await rngHandle.evaluate("getRandInt(1,1000)");
+  const afterFirst = rngHandle.rng.getState();
+  assert.ok(rngHandle.cycle() > 0, "cycle advances on rng use");
+  rngHandle.rng.setState(before);
+  const replay = await rngHandle.evaluate("getRandInt(1,1000)");
+  assert.equal(first, replay, "setState restores rng for deterministic replay");
+  assert.deepEqual(rngHandle.rng.getState(), afterFirst);
+
+  const peekHandle = load({ a: 1, b: { c: 2 } });
+  const peeked = await peekHandle.peek(["a", "b.c", "nope"]);
+  assert.deepEqual(peeked, { a: 1, "b.c": 2, nope: null });
+
+  const updHandle = load({ score: 5, tags: ["x"], info: { mood: "calm" } });
+  const resolvedA = await updHandle.update({ score: "-> score + 1" });
+  assert.deepEqual(resolvedA, { score: 6 });
+  const resolvedB = await updHandle.update({ "tags+": ["y"], "info+": { fear: 0.2 } });
+  assert.deepEqual(resolvedB, { tags: ["x", "y"], info: { mood: "calm", fear: 0.2 } });
+  const resolvedC = await updHandle.update({ "missing.nested": 42 });
+  assert.deepEqual(resolvedC, { "missing.nested": 42 });
 }
 
 void main();

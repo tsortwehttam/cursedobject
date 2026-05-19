@@ -2,7 +2,7 @@ import { load as parseYaml } from "js-yaml";
 import { LazyValue, MixedObject, MixedValue, SerialObject, SerialValue } from "./lib/CoreTypings";
 import { castToString, isTruthy, isValidKey, safeGet } from "./lib/EvalCasting";
 import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
-import { createPRNG } from "./lib/RandHelpers";
+import { createPRNG, PRNG } from "./lib/RandHelpers";
 import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
 import { createRandFunctions } from "./lib/functions/RandFunctions";
 import { readTemplateToken } from "./lib/TemplateHelpers";
@@ -41,16 +41,22 @@ export type YamlchemyHandle = {
     (expr: string, vars: Record<string, SerialValue>): Promise<SerialValue>;
   };
   raw(path: string): MixedValue;
+  peek: {
+    (paths: string[]): Promise<SerialObject>;
+    (paths: string[], vars: Record<string, SerialValue>): Promise<SerialObject>;
+  };
   update: {
-    (patch: UpdatePatch): Promise<void>;
-    (patch: UpdatePatch, vars: Record<string, SerialValue>): Promise<void>;
-    (patch: UpdatePatch, vars: Record<string, SerialValue>, opts: Partial<UpdateOptions>): Promise<void>;
+    (patch: UpdatePatch): Promise<SerialObject>;
+    (patch: UpdatePatch, vars: Record<string, SerialValue>): Promise<SerialObject>;
+    (patch: UpdatePatch, vars: Record<string, SerialValue>, opts: Partial<UpdateOptions>): Promise<SerialObject>;
   };
   clear(): void;
   fork: {
     (): YamlchemyHandle;
     (opts: Partial<LoadOptions>): YamlchemyHandle;
   };
+  rng: PRNG;
+  cycle(): number;
 };
 
 const DEFAULT_OPTIONS: LoadOptions = {
@@ -108,9 +114,12 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     calcAll,
     evaluate,
     raw,
+    peek,
     update,
     clear,
     fork,
+    rng,
+    cycle: () => rng.getCycle(),
   };
 
   function has(path: string): boolean {
@@ -152,7 +161,19 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     return evaluateExpr(expr, vars);
   }
 
-  async function update(patch: UpdatePatch, vars: LocalVars = {}, opts: Partial<UpdateOptions> = {}): Promise<void> {
+  async function peek(paths: string[], vars: LocalVars = {}): Promise<SerialObject> {
+    const out: SerialObject = {};
+    for (const path of paths) {
+      if (!hasPath(state, path)) {
+        out[path] = null;
+        continue;
+      }
+      out[path] = await calc(path, vars);
+    }
+    return out;
+  }
+
+  async function update(patch: UpdatePatch, vars: LocalVars = {}, opts: Partial<UpdateOptions> = {}): Promise<SerialObject> {
     const create = opts.create ?? true;
     const entries = flattenPatch(patch);
     type Pending = { path: string; rhs: SerialValue; cur: SerialValue; append: boolean };
@@ -175,6 +196,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
         pending.push({ path, rhs, cur: exists ? await calc(path, vars) : null, append: op.append });
       }
     }
+    const resolved: SerialObject = {};
     for (const { path, rhs, cur, append } of pending) {
       const val = await evalUpdateValue(rhs, { ...vars, this: cur });
       const next = calcPatchValue(cur, val, append);
@@ -184,7 +206,9 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       }
       setViewPath(state, path, next);
       setViewPath(view, path, next);
+      resolved[path] = next;
     }
+    return resolved;
   }
 
   async function evalUpdateValue(rhs: SerialValue, vars: LocalVars): Promise<SerialValue> {
