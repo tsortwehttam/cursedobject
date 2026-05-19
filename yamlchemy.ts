@@ -428,6 +428,14 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   return handle;
 }
 
+export async function evaluate(expr: string, opts: Partial<LoadOptions> = {}): Promise<SerialValue> {
+  return load({}, opts).evaluate(expr);
+}
+
+export async function render(template: string, opts: Partial<LoadOptions> = {}): Promise<SerialValue> {
+  return load({ _v: template }, opts).calc("_v");
+}
+
 function createBaseFunctionMap(funcs: Record<string, ExprEvalFunc>): Record<string, ExprEvalFunc> {
   return {
     first: (value) => (Array.isArray(value) ? (value[0] ?? null) : null),
