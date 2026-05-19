@@ -75,6 +75,32 @@ yam.clear();
 
 `update(patch, vars?, opts?)` mutates the loaded state. Patch keys are dotted paths (key templates may interpolate `{{vars}}` and contain `*` wildcards). Add `+` to a path to merge/append/concat instead of replace: objects deep-merge, arrays append, and strings concatenate. Patch values are plain literals or template strings (`-> expr`, `{{...}}`); inside a template, `this` is the current calculated value at that path. All `this` snapshots are read before any writes. Missing paths are created by default; pass `opts.create: false` to throw instead. `clear()` resets state to the originally loaded values.
 
+## One-shot helpers
+
+Use `evaluate(expr, opts?)` to run a single expression without loading YAML. Use `render(template, opts?)` for a single template string with full `{{...}}`, `<<...>>`, conditionals, and variations. Both accept the same options as `load` (`seed`, `cycle`, `params`, `fn`, `io`).
+
+```ts
+import { evaluate, render } from "./yamlchemy";
+
+await evaluate("x + y", { params: { x: 5, y: 10 } }); // 15
+await evaluate("shout(name)", {
+  params: { name: "ada" },
+  fn: { shout: (s) => String(s).toUpperCase() },
+}); // "ADA"
+
+await render("solution: {{foo + bar}}", { params: { foo: 1, bar: 2 } });
+// "solution: 3"
+
+await render("{{#if x > 0}}pos{{else}}neg{{/if}}", { params: { x: 5 } });
+// "pos"
+
+await render("<<lookup id 7>>", {
+  io: { async lookup(p) { return db.find(p.pairs.id); } },
+});
+```
+
+`render` returns the raw value when the template is a single directive (e.g. `<<obj>>` returning an object); otherwise the result is stringified.
+
 ## License
 
 Copyright 2026 Matthew Trost.
