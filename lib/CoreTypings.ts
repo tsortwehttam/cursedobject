@@ -1,12 +1,14 @@
 export type ScalarValue = string | null | number | boolean;
-
 export type VectorValue = string[] | number[] | boolean[];
-
 export type SerialObject = { [key: string]: SerialValue };
+export type SerialValue = ScalarValue | SerialValue[] | SerialObject;
+
+export type LazyScalar = () => ScalarValue | Promise<ScalarValue>;
+export type MixedScalar = ScalarValue | LazyScalar;
 
 export type LazyValue = () => SerialValue | Promise<SerialValue>;
-
-export type SerialValue = ScalarValue | SerialValue[] | SerialObject | LazyValue;
+export type MixedValue = SerialValue | LazyValue | MixedValue[] | MixedObject;
+export type MixedObject = { [key: string]: MixedValue };
 
 export type JsonSchema = Record<string, unknown>;
 

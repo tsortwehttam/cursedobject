@@ -1,5 +1,5 @@
 import { load as parseYaml } from "js-yaml";
-import { SerialObject, SerialValue } from "./lib/CoreTypings";
+import { LazyValue, MixedObject, MixedValue, SerialObject, SerialValue } from "./lib/CoreTypings";
 import { castToString, isTruthy, isValidKey, safeGet } from "./lib/EvalCasting";
 import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
 import { createPRNG } from "./lib/RandHelpers";
@@ -7,7 +7,7 @@ import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEva
 import { createRandFunctions } from "./lib/functions/RandFunctions";
 import { readTemplateToken } from "./lib/TemplateHelpers";
 
-export type YamlchemySource = string | SerialObject;
+export type YamlchemySource = string | MixedObject;
 
 export type LoadOptions = {
   seed: string | number;
@@ -40,7 +40,7 @@ export type YamlchemyHandle = {
     (expr: string): Promise<SerialValue>;
     (expr: string, vars: Record<string, SerialValue>): Promise<SerialValue>;
   };
-  raw(path: string): SerialValue;
+  raw(path: string): MixedValue;
   update: {
     (patch: UpdatePatch): Promise<void>;
     (patch: UpdatePatch, vars: Record<string, SerialValue>): Promise<void>;
@@ -75,10 +75,10 @@ function variationKind(marker: string): VariationKind {
 export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
   const parsed = typeof source === "string" ? parseYaml(source) : source;
-  const root = toSerialObject(parsed, "$");
+  const root = toMixedObject(parsed, "$");
   const rng = createPRNG(options.seed, options.cycle);
-  const state: SerialObject = cloneSerial(root) as SerialObject;
-  const view: SerialObject = cloneSerial(root) as SerialObject;
+  const state: MixedObject = cloneMixed(root) as MixedObject;
+  const view: MixedObject = cloneMixed(root) as MixedObject;
   const active = new Set<string>();
   const funcs = createBaseFunctionMap(options.fn);
   const runner = createLoadedRunner(rng, {}, funcs);
@@ -96,7 +96,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   function mergedVars(vars: LocalVars): SerialObject {
-    const out: SerialObject = { ...view };
+    const out: SerialObject = { ...(view as SerialObject) };
     overlay(out, options.params);
     overlay(out, vars);
     return out;
@@ -128,7 +128,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       throw new Error(`Circular calc path: ${path}`);
     }
     active.add(path);
-    const value = await calcValue(safeGet(state, path), path, vars);
+    const value = await calcValue(mixedGet(state, path), path, vars);
     active.delete(path);
     setViewPath(view, path, value);
     return value;
@@ -138,14 +138,14 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     for (const key of Object.keys(state)) {
       await calc(key, vars);
     }
-    return view;
+    return view as SerialObject;
   }
 
-  function raw(path: string): SerialValue {
+  function raw(path: string): MixedValue {
     if (!hasPath(root, path)) {
       throw new Error(`Unknown path: ${path}`);
     }
-    return safeGet(root, path);
+    return mixedGet(root, path);
   }
 
   async function evaluate(expr: string, vars: LocalVars = {}): Promise<SerialValue> {
@@ -203,8 +203,8 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   function clear(): void {
-    resetObject(state, cloneSerial(root) as SerialObject);
-    resetObject(view, cloneSerial(root) as SerialObject);
+    resetObject(state, cloneMixed(root) as MixedObject);
+    resetObject(view, cloneMixed(root) as MixedObject);
   }
 
   function fork(next: Partial<LoadOptions> = {}): YamlchemyHandle {
@@ -217,7 +217,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     });
   }
 
-  async function calcValue(value: SerialValue, path: string, vars: LocalVars): Promise<SerialValue> {
+  async function calcValue(value: MixedValue, path: string, vars: LocalVars): Promise<SerialValue> {
     if (typeof value === "function") {
       return calcValue(await value(), path, vars);
     }
@@ -472,17 +472,17 @@ function readLiteralPath(node: Expr): string | null {
   return first.lit;
 }
 
-function toSerialObject(value: unknown, path: string): SerialObject {
-  const serial = toSerialValue(value, path);
-  if (serial === null || typeof serial !== "object" || Array.isArray(serial)) {
+function toMixedObject(value: unknown, path: string): MixedObject {
+  const mixed = toMixedValue(value, path);
+  if (mixed === null || typeof mixed !== "object" || Array.isArray(mixed)) {
     throw new Error("Yamlchemy root must be a YAML object");
   }
-  return serial;
+  return mixed;
 }
 
-function toSerialValue(value: unknown, path: string): SerialValue {
+function toMixedValue(value: unknown, path: string): MixedValue {
   if (typeof value === "function") {
-    return value as SerialValue;
+    return value as LazyValue;
   }
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return value;
@@ -494,19 +494,19 @@ function toSerialValue(value: unknown, path: string): SerialValue {
     return value;
   }
   if (Array.isArray(value)) {
-    const out: SerialValue[] = [];
+    const out: MixedValue[] = [];
     for (let i = 0; i < value.length; i += 1) {
-      out.push(toSerialValue(value[i], joinPath(path, String(i))));
+      out.push(toMixedValue(value[i], joinPath(path, String(i))));
     }
     return out;
   }
   if (value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
-    const out: SerialObject = {};
+    const out: MixedObject = {};
     for (const [key, val] of Object.entries(value)) {
       if (!isValidKey(key)) {
         throw new Error(`Invalid key at ${path}: ${key}`);
       }
-      out[key] = toSerialValue(val, joinPath(path, key));
+      out[key] = toMixedValue(val, joinPath(path, key));
     }
     return out;
   }
@@ -672,12 +672,12 @@ function looksLikeVariationPart(part: string): boolean {
   return !/[()+*/<>=?:,;[\]{}]/.test(part);
 }
 
-function resetObject(target: SerialObject, fresh: SerialObject): void {
+function resetObject(target: MixedObject, fresh: MixedObject): void {
   for (const key of Object.keys(target)) {
     delete target[key];
   }
   for (const key of Object.keys(fresh)) {
-    target[key] = fresh[key];
+    target[key] = fresh[key]!;
   }
 }
 
@@ -712,7 +712,7 @@ export function calcPatchValue(cur: SerialValue, val: SerialValue, append: boole
   if (!append) return val;
   if (cur === null) return val;
   if (isPlainObj(cur) && isPlainObj(val)) {
-    const out: SerialObject = cloneSerial(cur) as SerialObject;
+    const out: SerialObject = cloneMixed(cur) as SerialObject;
     overlay(out, val);
     return out;
   }
@@ -730,25 +730,25 @@ function isValidPath(path: string): boolean {
   return parts.length > 0 && parts.every(isValidKey);
 }
 
-function ensureViewPath(root: SerialObject, path: string): void {
+function ensureViewPath(root: MixedObject, path: string): void {
   const parts = path.split(".");
-  let cur: SerialObject = root;
+  let cur: MixedObject = root;
   for (let i = 0; i < parts.length - 1; i += 1) {
     const part = parts[i]!;
     const next = cur[part];
-    if (isPlainObj(next)) {
+    if (isMixedObj(next)) {
       cur = next;
       continue;
     }
-    const fresh: SerialObject = {};
+    const fresh: MixedObject = {};
     cur[part] = fresh;
     cur = fresh;
   }
 }
 
-function setViewPath(root: SerialObject, path: string, value: SerialValue): void {
+function setViewPath(root: MixedObject, path: string, value: MixedValue): void {
   const parts = path.split(".");
-  let cur: SerialValue = root;
+  let cur: MixedValue = root;
   for (let i = 0; i < parts.length - 1; i += 1) {
     const part = parts[i]!;
     if (cur === null || typeof cur !== "object") return;
@@ -776,12 +776,12 @@ function overlay(target: SerialObject, source: Record<string, SerialValue>): voi
     const a = target[key];
     const b = source[key];
     if (isPlainObj(a) && isPlainObj(b)) {
-      const merged: SerialObject = { ...a };
-      overlay(merged, b);
+      const merged: SerialObject = { ...(a as SerialObject) };
+      overlay(merged, b as Record<string, SerialValue>);
       target[key] = merged;
       continue;
     }
-    target[key] = b;
+    target[key] = b!;
   }
 }
 
@@ -789,30 +789,34 @@ function isPlainObj(value: SerialValue | undefined): value is SerialObject {
   return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value);
 }
 
-function cloneSerial(value: SerialValue): SerialValue {
+function isMixedObj(value: MixedValue | undefined): value is MixedObject {
+  return value !== null && value !== undefined && typeof value === "object" && !Array.isArray(value);
+}
+
+function cloneMixed(value: MixedValue): MixedValue {
   if (value === null || typeof value !== "object") {
     return value;
   }
   if (Array.isArray(value)) {
-    const out: SerialValue[] = [];
+    const out: MixedValue[] = [];
     for (let i = 0; i < value.length; i += 1) {
-      out.push(cloneSerial(value[i] ?? null));
+      out.push(cloneMixed(value[i] ?? null));
     }
     return out;
   }
-  const out: SerialObject = {};
+  const out: MixedObject = {};
   for (const key of Object.keys(value)) {
-    out[key] = cloneSerial(value[key] ?? null);
+    out[key] = cloneMixed(value[key] ?? null);
   }
   return out;
 }
 
-function hasPath(root: Record<string, SerialValue>, path: string): boolean {
+function hasPath(root: MixedObject, path: string): boolean {
   if (path.trim() === "") {
     return true;
   }
   const parts = path.split(".");
-  let cur: SerialValue | Record<string, SerialValue> = root;
+  let cur: MixedValue = root;
   for (const part of parts) {
     if (cur === null || typeof cur !== "object") {
       return false;
@@ -822,18 +826,37 @@ function hasPath(root: Record<string, SerialValue>, path: string): boolean {
       if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) {
         return false;
       }
-      cur = cur[idx];
+      cur = cur[idx]!;
       continue;
     }
     if (!Object.prototype.hasOwnProperty.call(cur, part)) {
       return false;
     }
-    cur = cur[part];
+    cur = cur[part]!;
   }
   return true;
 }
 
-function matchPaths(root: SerialObject, pattern: string): string[] {
+function mixedGet(root: MixedObject, path: string): MixedValue {
+  if (path.trim() === "") {
+    return root;
+  }
+  const parts = path.split(".");
+  let cur: MixedValue = root;
+  for (const part of parts) {
+    if (cur === null || typeof cur !== "object") return null;
+    if (Array.isArray(cur)) {
+      const idx = Number(part);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) return null;
+      cur = cur[idx] ?? null;
+      continue;
+    }
+    cur = cur[part] ?? null;
+  }
+  return cur;
+}
+
+function matchPaths(root: MixedObject, pattern: string): string[] {
   if (pattern.trim() === "") {
     return [];
   }
@@ -842,7 +865,7 @@ function matchPaths(root: SerialObject, pattern: string): string[] {
   return out;
 }
 
-function walkPath(value: SerialValue, parts: string[], path: string[], out: string[]): void {
+function walkPath(value: MixedValue, parts: string[], path: string[], out: string[]): void {
   if (parts.length === 0) {
     out.push(path.join("."));
     return;
@@ -854,12 +877,12 @@ function walkPath(value: SerialValue, parts: string[], path: string[], out: stri
   if (part === "*") {
     if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i += 1) {
-        walkPath(value[i], rest, [...path, String(i)], out);
+        walkPath(value[i]!, rest, [...path, String(i)], out);
       }
       return;
     }
     for (const key of Object.keys(value)) {
-      walkPath(value[key], rest, [...path, key], out);
+      walkPath(value[key]!, rest, [...path, key], out);
     }
     return;
   }
@@ -868,13 +891,13 @@ function walkPath(value: SerialValue, parts: string[], path: string[], out: stri
     if (!Number.isInteger(idx) || idx < 0 || idx >= value.length) {
       return;
     }
-    walkPath(value[idx], rest, [...path, part], out);
+    walkPath(value[idx]!, rest, [...path, part], out);
     return;
   }
   if (!Object.prototype.hasOwnProperty.call(value, part)) {
     return;
   }
-  walkPath(value[part], rest, [...path, part], out);
+  walkPath(value[part]!, rest, [...path, part], out);
 }
 
 function joinPath(base: string, part: string): string {
