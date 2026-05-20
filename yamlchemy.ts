@@ -469,6 +469,23 @@ export async function render(template: string, opts: Partial<LoadOptions> = {}):
   return load({ _v: template }, opts).calc("_v");
 }
 
+export function safeMixed(v: unknown): MixedValue {
+  if (typeof v === "function") return v as MixedValue;
+  if (typeof v === "string") return v;
+  if (typeof v === "boolean") return v;
+  if (typeof v === "bigint") return Number(v);
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+  if (typeof v === "symbol") return String(v);
+  if (v === null || v === undefined) return null;
+  if (Array.isArray(v)) return v.map(safeMixed);
+  if (typeof v === "object") {
+    const out: Record<string, MixedValue> = {};
+    for (const k of Object.keys(v as object)) out[k] = safeMixed((v as Record<string, unknown>)[k]);
+    return out;
+  }
+  return null;
+}
+
 function createBaseFunctionMap(funcs: Record<string, ExprEvalFunc>): Record<string, ExprEvalFunc> {
   return {
     first: (value) => (Array.isArray(value) ? (value[0] ?? null) : null),
