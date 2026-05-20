@@ -49,13 +49,14 @@ yam.has("names.0"); // true
 yam.raw("greeting"); // "Hello {{name}}"
 await yam.calcAll();
 
-await yam.update(
+const { values, undo } = await yam.update(
   {
     "relations.{{other}}.emotions.arousal": "-> incr(this)",
     emotions: { arousal: "-> incr(this) + 2.5" },
   },
   { other: "sarah" },
 );
+yam.restore(undo);
 yam.clear();
 ```
 
@@ -73,7 +74,7 @@ yam.clear();
 
 `calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths and variables evaluate to `null`; bad expressions, unknown directives, and circular dependencies throw.
 
-`update(patch, vars?, opts?)` mutates the loaded state. Patch keys are dotted paths (key templates may interpolate `{{vars}}` and contain `*` wildcards). Add `+` to a path to merge/append/concat instead of replace: objects deep-merge, arrays append, and strings concatenate. Patch values are plain literals or template strings (`-> expr`, `{{...}}`); inside a template, `this` is the current calculated value at that path. All `this` snapshots are read before any writes. Missing paths are created by default; pass `opts.create: false` to throw instead. `clear()` resets state to the originally loaded values.
+`update(patch, vars?, opts?)` mutates the loaded state and returns `{ values, undo }`. `values` is the resolved path/value map that was written. `undo` is a serializable evaluator snapshot for `restore(undo)`, including prior values, created paths, PRNG state, variation counters, and a revision guard. Restore patches are LIFO: restore the newest successful update first, then earlier updates. Patch keys are dotted paths (key templates may interpolate `{{vars}}` and contain `*` wildcards). Add `+` to a path to merge/append/concat instead of replace: objects deep-merge, arrays append, and strings concatenate. Patch values are plain literals or template strings (`-> expr`, `{{...}}`); inside a template, `this` is the current calculated value at that path. All `this` snapshots are read before any writes. Missing paths are created by default; pass `opts.create: false` to throw instead. `clear()` resets state to the originally loaded values.
 
 ## One-shot helpers
 

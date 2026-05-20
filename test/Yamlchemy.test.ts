@@ -291,11 +291,58 @@ gate: -> id == '{{&a|b|c}}'
 
   const updHandle = load({ score: 5, tags: ["x"], info: { mood: "calm" } });
   const resolvedA = await updHandle.update({ score: "-> score + 1" });
-  assert.deepEqual(resolvedA, { score: 6 });
+  assert.deepEqual(resolvedA.values, { score: 6 });
   const resolvedB = await updHandle.update({ "tags+": ["y"], "info+": { fear: 0.2 } });
-  assert.deepEqual(resolvedB, { tags: ["x", "y"], info: { mood: "calm", fear: 0.2 } });
+  assert.deepEqual(resolvedB.values, { tags: ["x", "y"], info: { mood: "calm", fear: 0.2 } });
   const resolvedC = await updHandle.update({ "missing.nested": 42 });
-  assert.deepEqual(resolvedC, { "missing.nested": 42 });
+  assert.deepEqual(resolvedC.values, { "missing.nested": 42 });
+
+  const undoHandle = load(
+    {
+      score: 1,
+      pick: "{{&a|b|c}}",
+      roll: 0,
+    },
+    { seed: "undo" },
+  );
+  assert.equal(await undoHandle.calc("pick"), "a");
+  const rngBefore = undoHandle.rng.getState();
+  const undoResult = await undoHandle.update({
+    score: "-> score + 1",
+    "missing.deep": "{{&a|b|c}}",
+    roll: "-> getRandInt(1, 1000)",
+  });
+  assert.equal(undoResult.values.score, 2);
+  assert.equal(undoResult.values["missing.deep"], "b");
+  assert.equal(typeof undoResult.values.roll, "number");
+  assert.equal(await undoHandle.calc("score"), 2);
+  assert.equal(undoHandle.has("missing.deep"), true);
+  assert.notDeepEqual(undoHandle.rng.getState(), rngBefore);
+  undoHandle.restore(undoResult.undo);
+  assert.equal(await undoHandle.calc("score"), 1);
+  assert.equal(undoHandle.has("missing.deep"), false);
+  assert.deepEqual(undoHandle.rng.getState(), rngBefore);
+  assert.equal(await undoHandle.calc("pick"), "b");
+
+  const parentHandle = load({ parent: 1 });
+  const parentUndo = await parentHandle.update({ "parent.child": 2 });
+  assert.deepEqual(await parentHandle.calc("parent"), { child: 2 });
+  parentHandle.restore(parentUndo.undo);
+  assert.equal(await parentHandle.calc("parent"), 1);
+
+  const stackHandle = load({ score: 1 });
+  const undoA = await stackHandle.update({ score: 2 });
+  const undoB = await stackHandle.update({ score: 3 });
+  assert.equal(await stackHandle.calc("score"), 3);
+  stackHandle.restore(undoB.undo);
+  assert.equal(await stackHandle.calc("score"), 2);
+  stackHandle.restore(undoA.undo);
+  assert.equal(await stackHandle.calc("score"), 1);
+
+  const guardHandle = load({ score: 1 });
+  const guardA = await guardHandle.update({ score: 2 });
+  await guardHandle.update({ score: 3 });
+  assert.throws(() => guardHandle.restore(guardA.undo), /Cannot restore undo patch/);
 }
 
 void main();

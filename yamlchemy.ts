@@ -2,7 +2,7 @@ import { load as parseYaml } from "js-yaml";
 import { LazyValue, MixedObject, MixedValue, SerialObject, SerialValue } from "./lib/CoreTypings";
 import { castToString, isTruthy, isValidKey, safeGet } from "./lib/EvalCasting";
 import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
-import { createPRNG, PRNG } from "./lib/RandHelpers";
+import { createPRNG, PRNG, PRNGState } from "./lib/RandHelpers";
 import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
 import { createRandFunctions } from "./lib/functions/RandFunctions";
 import { readTemplateToken } from "./lib/TemplateHelpers";
@@ -23,6 +23,16 @@ type IfBranch = { expr: string | null; body: string; end: number };
 export type UpdatePatchValue = SerialValue | UpdatePatch;
 export type UpdatePatch = { [key: string]: UpdatePatchValue };
 export type UpdateOptions = { create: boolean };
+export type UpdateResult = { values: SerialObject; undo: UndoPatch };
+export type UndoPatch = {
+  version: 1;
+  from: number;
+  to: number;
+  paths: Record<string, SerialValue>;
+  unset: string[];
+  rng: PRNGState;
+  cycles: Record<string, number>;
+};
 
 export type YamlchemyIoFunc = (params: MarshalledParams, handle: YamlchemyHandle) => Promise<SerialValue> | SerialValue;
 
@@ -50,10 +60,11 @@ export type YamlchemyHandle = {
     (paths: string[], vars: Record<string, SerialValue>): Promise<SerialObject>;
   };
   update: {
-    (patch: UpdatePatch): Promise<SerialObject>;
-    (patch: UpdatePatch, vars: Record<string, SerialValue>): Promise<SerialObject>;
-    (patch: UpdatePatch, vars: Record<string, SerialValue>, opts: Partial<UpdateOptions>): Promise<SerialObject>;
+    (patch: UpdatePatch): Promise<UpdateResult>;
+    (patch: UpdatePatch, vars: Record<string, SerialValue>): Promise<UpdateResult>;
+    (patch: UpdatePatch, vars: Record<string, SerialValue>, opts: Partial<UpdateOptions>): Promise<UpdateResult>;
   };
+  restore(undo: UndoPatch): void;
   clear(): void;
   fork: {
     (): YamlchemyHandle;
@@ -72,6 +83,7 @@ const DEFAULT_OPTIONS: LoadOptions = {
 };
 
 const VARIATION_MARKERS = new Set(["~", "&", "!"]);
+const UNDO_PATCH_VERSION = 1;
 
 type VariationKind = "sequence" | "cycle" | "random" | "once";
 
@@ -95,6 +107,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   const baseFuncs = buildEvalFunctions({ ...createRandFunctions(rng), ...funcs });
   const astCache = new Map<string, Expr | null>();
   const cycleCounters = new Map<string, number>();
+  let rev = 0;
 
   function parseCached(expr: string): Expr | null {
     if (astCache.has(expr)) {
@@ -121,6 +134,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     resolve,
     peek,
     update,
+    restore,
     clear,
     fork,
     rng,
@@ -182,10 +196,21 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     return out;
   }
 
-  async function update(patch: UpdatePatch, vars: LocalVars = {}, opts: Partial<UpdateOptions> = {}): Promise<SerialObject> {
+  async function update(patch: UpdatePatch, vars: LocalVars = {}, opts: Partial<UpdateOptions> = {}): Promise<UpdateResult> {
     const create = opts.create ?? true;
     const entries = flattenPatch(patch);
-    type Pending = { path: string; rhs: SerialValue; cur: SerialValue; append: boolean };
+    const from = rev;
+    const rngState = rng.getState();
+    const cycles = serializeCycles(cycleCounters);
+    type Pending = {
+      path: string;
+      rhs: SerialValue;
+      cur: SerialValue;
+      append: boolean;
+      undoPath: string;
+      undoExists: boolean;
+      undoValue: SerialValue;
+    };
     const pending: Pending[] = [];
     for (const [keyTpl, rhs] of entries) {
       const keyPath = await renderText(keyTpl, vars);
@@ -202,11 +227,28 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
         if (!exists && !create) {
           throw new Error(`Unknown update path: ${path}`);
         }
-        pending.push({ path, rhs, cur: exists ? await calc(path, vars) : null, append: op.append });
+        const cur = exists ? await calc(path, vars) : null;
+        const undo = exists ? { path, exists: true } : findUndoTarget(state, path);
+        pending.push({
+          path,
+          rhs,
+          cur,
+          append: op.append,
+          undoPath: undo.path,
+          undoExists: undo.exists,
+          undoValue: undo.exists ? await calc(undo.path, vars) : null,
+        });
       }
     }
     const resolved: SerialObject = {};
-    for (const { path, rhs, cur, append } of pending) {
+    const paths: Record<string, SerialValue> = {};
+    const unset = new Set<string>();
+    for (const { path, rhs, cur, append, undoPath, undoExists, undoValue } of pending) {
+      if (!undoExists) {
+        unset.add(undoPath);
+      } else if (!Object.prototype.hasOwnProperty.call(paths, undoPath)) {
+        paths[undoPath] = cloneSerial(undoValue);
+      }
       const val = await evalUpdateValue(rhs, { ...vars, this: cur });
       const next = calcPatchValue(cur, val, append);
       if (create && !hasPath(state, path)) {
@@ -217,7 +259,19 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       setViewPath(view, path, next);
       resolved[path] = next;
     }
-    return resolved;
+    rev += 1;
+    return {
+      values: resolved,
+      undo: {
+        version: UNDO_PATCH_VERSION,
+        from,
+        to: rev,
+        paths,
+        unset: [...unset],
+        rng: rngState,
+        cycles,
+      },
+    };
   }
 
   async function evalUpdateValue(rhs: SerialValue, vars: LocalVars): Promise<SerialValue> {
@@ -238,6 +292,30 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   function clear(): void {
     resetObject(state, cloneMixed(root) as MixedObject);
     resetObject(view, cloneMixed(root) as MixedObject);
+    rev += 1;
+  }
+
+  function restore(undo: UndoPatch): void {
+    if (undo.version !== UNDO_PATCH_VERSION) {
+      throw new Error(`Unsupported undo patch version: ${undo.version}`);
+    }
+    if (rev !== undo.to) {
+      throw new Error(`Cannot restore undo patch from revision ${undo.from}; current revision is ${rev}`);
+    }
+    for (const path of undo.unset) {
+      deletePath(state, path);
+      deletePath(view, path);
+    }
+    for (const path of Object.keys(undo.paths)) {
+      const val = cloneSerial(undo.paths[path]!);
+      ensureViewPath(state, path);
+      ensureViewPath(view, path);
+      setViewPath(state, path, val);
+      setViewPath(view, path, cloneSerial(val));
+    }
+    rng.setState(undo.rng);
+    restoreCycles(cycleCounters, undo.cycles);
+    rev = undo.from;
   }
 
   function fork(next: Partial<LoadOptions> = {}): YamlchemyHandle {
@@ -731,6 +809,21 @@ function resetObject(target: MixedObject, fresh: MixedObject): void {
   }
 }
 
+function serializeCycles(cycles: Map<string, number>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, val] of cycles) {
+    out[key] = val;
+  }
+  return out;
+}
+
+function restoreCycles(target: Map<string, number>, cycles: Record<string, number>): void {
+  target.clear();
+  for (const key of Object.keys(cycles)) {
+    target.set(key, cycles[key]!);
+  }
+}
+
 function flattenPatch(patch: UpdatePatch, prefix = ""): [string, SerialValue][] {
   const out: [string, SerialValue][] = [];
   for (const key of Object.keys(patch)) {
@@ -743,6 +836,10 @@ function flattenPatch(patch: UpdatePatch, prefix = ""): [string, SerialValue][] 
     out.push([path, value as SerialValue]);
   }
   return out;
+}
+
+function cloneSerial(value: SerialValue): SerialValue {
+  return cloneMixed(value) as SerialValue;
 }
 
 export function parseUpdatePath(path: string): { path: string; append: boolean } {
@@ -819,6 +916,56 @@ function setViewPath(root: MixedObject, path: string, value: MixedValue): void {
     return;
   }
   cur[last] = value;
+}
+
+function findUndoTarget(root: MixedObject, path: string): { path: string; exists: boolean } {
+  const parts = path.split(".");
+  let cur: MixedValue = root;
+  const prefix: string[] = [];
+  for (const part of parts) {
+    if (cur === null || typeof cur !== "object") {
+      return { path: prefix.join("."), exists: true };
+    }
+    prefix.push(part);
+    if (Array.isArray(cur)) {
+      const idx = Number(part);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) {
+        return { path: prefix.join("."), exists: false };
+      }
+      cur = cur[idx]!;
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(cur, part)) {
+      return { path: prefix.join("."), exists: false };
+    }
+    cur = cur[part]!;
+  }
+  return { path, exists: true };
+}
+
+function deletePath(root: MixedObject, path: string): void {
+  const parts = path.split(".");
+  let cur: MixedValue = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const part = parts[i]!;
+    if (cur === null || typeof cur !== "object") return;
+    if (Array.isArray(cur)) {
+      const idx = Number(part);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) return;
+      cur = cur[idx] ?? null;
+      continue;
+    }
+    cur = cur[part] ?? null;
+  }
+  const last = parts[parts.length - 1]!;
+  if (cur === null || typeof cur !== "object") return;
+  if (Array.isArray(cur)) {
+    const idx = Number(last);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= cur.length) return;
+    cur.splice(idx, 1);
+    return;
+  }
+  delete cur[last];
 }
 
 function overlay(target: SerialObject, source: Record<string, SerialValue>): void {
