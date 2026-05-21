@@ -1,10 +1,13 @@
+import { load as parseYaml } from "js-yaml";
 import assert from "node:assert/strict";
 import { SerialValue } from "../lib/CoreTypings";
-import { load, setValueAtPath } from "../yamlchemy";
+import { load, MixedObject, setValueAtPath } from "../yamlchemy";
+
+const yaml = (text: string): MixedObject => parseYaml(text) as MixedObject;
 
 async function main() {
   const yam = load(
-    `
+    yaml(`
 foo: 1
 bar: bum
 truthy: 1
@@ -54,7 +57,7 @@ firstName: "{{get('people.0.name')}}"
 missingOne: -> get("people.9.name")
 missingMany: -> select("people.*.missing")
 dynamicName: -> people[1].name
-`,
+`),
     {
       seed: 123,
       fn: {
@@ -125,7 +128,7 @@ dynamicName: -> people[1].name
   assert.equal(all.bar, "bum");
   assert.deepEqual(all.meow, { a: "4", b: "ho" });
 
-  const dynamic = load(`
+  const dynamic = load(yaml(`
 people:
   - name: Grace
     score: 11
@@ -136,17 +139,17 @@ emotions:
     attraction: 0.7
 score: -> people[other.index].score
 attraction: -> emotions[actor.id].attraction
-`);
+`));
   assert.equal(await dynamic.calc("score", { other: { index: 1 } }), 7);
   assert.equal(await dynamic.calc("attraction", { actor: { id: "Ada" } }), 0.7);
   assert.equal(await dynamic.evaluate("emotions[actor.id].attraction", { actor: { id: "Ada" } }), 0.7);
   assert.equal(await dynamic.evaluate('emotions["Ada"].attraction'), 0.7);
 
-  const scoped = load(`
+  const scoped = load(yaml(`
 name: Ada
 greeting: Hello {{ name }}
 alias: "{{ get('self.name') }}"
-`);
+`));
   assert.equal(await scoped.calc("greeting"), "Hello Ada");
   assert.equal(await scoped.calc("greeting", { name: "Grace" }), "Hello Grace");
   assert.equal(await scoped.evaluate("name", { name: "Grace" }), "Grace");
@@ -160,7 +163,7 @@ alias: "{{ get('self.name') }}"
   assert.equal(await scoped.calc("greeting"), "Hello Ada");
 
   const mut = load(
-    `
+    yaml(`
 relations:
   sarah:
     emotions:
@@ -168,7 +171,7 @@ relations:
       arousal: 0
 emotions:
   arousal: 1
-`,
+`),
     {
       fn: { incr: (n: SerialValue) => Number(n) + 1 },
     },
@@ -213,11 +216,11 @@ emotions:
   assert.equal(await mut.calc("relations.sarah.emotions.anger"), 1);
   assert.equal(mut.has("nested.brand"), false);
 
-  const variations = load(`
+  const variations = load(yaml(`
 cyc: "<<cycle a|b|c>>"
 seq: "<<seq x|y|z>>"
 once: "<<once p|q|r>>"
-`);
+`));
   assert.equal(await variations.calc("cyc"), "a");
   assert.equal(await variations.calc("cyc"), "b");
   assert.equal(await variations.calc("cyc"), "c");
@@ -231,23 +234,23 @@ once: "<<once p|q|r>>"
   assert.equal(await variations.calc("once"), "r");
   assert.equal(await variations.calc("once"), "");
 
-  const arrowTpl = load(`
+  const arrowTpl = load(yaml(`
 pick: -> '<<cycle grub|mott|skarn>>'
 gate: -> id == '<<cycle a|b|c>>'
-`);
+`));
   assert.equal(await arrowTpl.calc("pick"), "grub");
   assert.equal(await arrowTpl.calc("pick"), "mott");
   assert.equal(await arrowTpl.calc("gate", { id: "a" }), true);
   assert.equal(await arrowTpl.calc("gate", { id: "b" }), true);
   assert.equal(await arrowTpl.calc("gate", { id: "x" }), false);
 
-  assert.equal(await load("out: '{{missing}}'").calc("out"), "");
+  assert.equal(await load(yaml("out: '{{missing}}'")).calc("out"), "");
   assert.equal(await yam.evaluate("missing"), null);
   assert.equal(await yam.evaluate("missing ?? 1"), 1);
   assert.equal(await yam.evaluate("missing + 1"), 1);
-  await assert.rejects(() => load("bad: '<<#missing ok>>'").calc("bad"), /Unknown io directive: missing/);
-  await assert.rejects(() => load("bad: '<<missing ok>>'").calc("bad"), /Unknown io directive: missing/);
-  assert.equal(await load("ok: 'a << b'").calc("ok"), "a << b");
+  await assert.rejects(() => load(yaml("bad: '<<#missing ok>>'")).calc("bad"), /Unknown io directive: missing/);
+  await assert.rejects(() => load(yaml("bad: '<<missing ok>>'")).calc("bad"), /Unknown io directive: missing/);
+  assert.equal(await load(yaml("ok: 'a << b'")).calc("ok"), "a << b");
   assert.throws(() => load({ constructor: "bad" }), /Invalid key/);
 
   const fns = load({

@@ -2,13 +2,14 @@
 
 <img src="./mascot.png" alt="Yamlchemy mascot" width="160" />
 
-Yamlchemy loads YAML (or a parsed object) and calculates values with deterministic templates, expressions, local async bindings, and inline conditionals.
+Yamlchemy calculates values on a plain JS object with deterministic templates, expressions, local async bindings, and inline conditionals. It does not parse YAML — bring your own parser (`js-yaml`, `json5`, hand-built objects, whatever).
 
 ```ts
+import { load as parseYaml } from "js-yaml";
 import { load } from "./yamlchemy";
 
 const yam = load(
-  `
+  parseYaml(`
 name: Ada
 greeting: Hello {{name}}
 score: -> 1 + 2
@@ -25,7 +26,7 @@ line: |
   {{else}}
     failed
   {{/if}}
-`,
+`),
   {
     seed: 123,
     fn: {
@@ -64,7 +65,7 @@ yam.clear();
 
 ### Pure layer: `{{...}}`
 
-- `{{expr}}` evaluates expressions against YAML keys, params, local bindings, and built-in helpers. Pure — no PRNG, no counters, no I/O.
+- `{{expr}}` evaluates expressions against object keys, params, local bindings, and built-in helpers. Pure — no PRNG, no counters, no I/O.
 - `get("path.to.value")` reads one calculated path and returns `null` when missing.
 - `select("path.*.value")` reads calculated wildcard matches and always returns an array. `*` matches one object key or array index.
 - `-> expr` makes a string value calculate directly to the expression value. The expression source may embed `{{...}}` and `<<...>>` (so the impurity is still visible in the source).
@@ -81,13 +82,13 @@ Everything that mutates state — PRNG advancement, counter bumps, I/O — uses 
 - Built-in variation pickers (split parts on `|`): `<<rand A|B|C>>` (PRNG), `<<cycle A|B|C>>`, `<<seq A|B|C>>` (stops at last), `<<once A|B|C>>` (visits each once then `""`). Cycle/seq/once use a counter keyed on the directive body.
 - Built-in rand value generators: `<<random>>` (float 0–1), `<<randint min max>>`, `<<randfloat min max>>`, `<<randnormal min max>>`, `<<randintnormal min max>>`, `<<dice sides=6>>`, `<<coin prob=0.5>>`, `<<roll count sides=6>>`. Builtin names take precedence over `opts.io` entries.
 
-`calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context (no directive processing — directives only fire while rendering field values). Missing paths and variables evaluate to `null`; bad expressions, unknown directives, and circular dependencies throw.
+`calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated state (no directive processing — directives only fire while rendering field values). Missing paths and variables evaluate to `null`; bad expressions, unknown directives, and circular dependencies throw.
 
 `update(patch, vars?, opts?)` mutates the loaded state and returns `{ values, undo }`. `values` is the resolved path/value map that was written. `undo` is a serializable snapshot for `restore(undo)`, recording prior values, created paths, and a revision guard. PRNG state and cycle counters are NOT tracked in undo — randomness is an explicit side effect (the `<<>>` is the signal) and not rolled back. Restore patches are LIFO: restore the newest successful update first, then earlier updates. Patch keys are dotted paths (key templates may interpolate `{{vars}}` and contain `*` wildcards). Add `+` to a path to merge/append/concat instead of replace: objects deep-merge, arrays append, and strings concatenate. Patch values are plain literals or template strings (`-> expr`, `{{...}}`, `<<...>>`); inside a template, `this` is the current calculated value at that path. All `this` snapshots are read before any writes. Missing paths are created by default; pass `opts.create: false` to throw instead. `clear()` resets state to the originally loaded values.
 
 ## One-shot helpers
 
-Use `evaluate(expr, opts?)` to run a single expression without loading YAML. Use `render(template, opts?)` for a single template string with full `{{...}}`, `<<...>>`, and conditionals. Both accept the same options as `load` (`seed`, `cycle`, `params`, `fn`, `io`).
+Use `evaluate(expr, opts?)` to run a single expression without a source object. Use `render(template, opts?)` for a single template string with full `{{...}}`, `<<...>>`, and conditionals. Both accept the same options as `load` (`seed`, `cycle`, `params`, `fn`, `io`).
 
 ```ts
 import { evaluate, render } from "./yamlchemy";

@@ -1,4 +1,3 @@
-import { load as parseYaml } from "js-yaml";
 import { BUILTIN_DIRECTIVES } from "./lib/Builtins";
 import { SerialObject, SerialValue } from "./lib/CoreTypings";
 import { castToString, isTruthy, isValidKey, safeGet } from "./lib/EvalCasting";
@@ -10,8 +9,6 @@ import { readTemplateToken } from "./lib/TemplateHelpers";
 export type LazyValue = (vars: SerialObject, handle: YamlchemyHandle) => SerialValue | Promise<SerialValue>;
 export type MixedValue = SerialValue | LazyValue | MixedValue[] | MixedObject;
 export type MixedObject = { [key: string]: MixedValue };
-
-export type YamlchemySource = string | MixedObject;
 
 export type LoadOptions = {
   seed: string | number;
@@ -86,10 +83,9 @@ const DEFAULT_OPTIONS: LoadOptions = {
 
 const UNDO_PATCH_VERSION = 1;
 
-export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
+export function load(source: MixedObject, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
-  const parsed = typeof source === "string" ? parseYaml(source) : source;
-  const root = toMixedObject(parsed, "$");
+  const root = toMixedObject(source, "$");
   const rng = createPRNG(options.seed, options.cycle);
   const state: MixedObject = cloneMixed(root) as MixedObject;
   const view: MixedObject = cloneMixed(root) as MixedObject;
@@ -587,7 +583,7 @@ function readLiteralPath(node: Expr): string | null {
 function toMixedObject(value: unknown, path: string): MixedObject {
   const mixed = toMixedValue(value, path);
   if (mixed === null || typeof mixed !== "object" || Array.isArray(mixed)) {
-    throw new Error("Yamlchemy root must be a YAML object");
+    throw new Error("Yamlchemy root must be an object");
   }
   return mixed;
 }

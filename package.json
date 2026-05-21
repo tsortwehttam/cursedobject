@@ -1,7 +1,7 @@
 {
   "name": "yamlchemy",
   "version": "1.0.0",
-  "description": "🍠 YAML templates with expressions, deterministic variation, async directives, and calculated field selection.",
+  "description": "🍠 Object template engine: expressions, async directives, and calculated field selection. Bring your own YAML/JSON parser.",
   "main": "yamlchemy.ts",
   "types": "yamlchemy.ts",
   "files": [
@@ -22,13 +22,13 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.5.2",
+    "js-yaml": "^4.1.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
-    "js-yaml": "^4.1.1",
     "json5": "^2.2.3"
   }
 }
