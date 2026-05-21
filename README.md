@@ -62,24 +62,32 @@ yam.clear();
 
 ## Syntax
 
-- `{{expr}}` evaluates expressions against YAML keys, params, local bindings, and built-in helpers.
+### Pure layer: `{{...}}`
+
+- `{{expr}}` evaluates expressions against YAML keys, params, local bindings, and built-in helpers. Pure — no PRNG, no counters, no I/O.
 - `get("path.to.value")` reads one calculated path and returns `null` when missing.
 - `select("path.*.value")` reads calculated wildcard matches and always returns an array. `*` matches one object key or array index.
-- `{{cool|great|amazing}}` picks one variation with the seeded PRNG. Parts split on `|` when they look like plain text. Optional Ink-style leading marker selects variation kind: `{{~A|B|C}}` random, `{{&A|B|C}}` cycle, `{{!A|B|C}}` once-only, default (no marker) sequence. All four currently resolve via the same seeded PRNG pick — markers are reserved for future visit-state-aware semantics.
-- `-> expr` makes a string value calculate directly to the expression value.
+- `-> expr` makes a string value calculate directly to the expression value. The expression source may embed `{{...}}` and `<<...>>` (so the impurity is still visible in the source).
 - `opts.fn` registers sync helpers callable from `{{...}}` expressions (e.g. `shout(name)`).
-- `<<name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result. The legacy `<<#name args>>` form still works. When the field value is a single directive with no surrounding text (e.g. `field: <<lookup id 7>>`), the raw return value is preserved — objects, arrays, numbers, etc. pass through unchanged. When embedded in a larger string, the result is stringified (objects/arrays via `JSON.stringify`).
-- `<<name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing. The binding holds the raw value, so subsequent `{{binding}}` or `{{binding.field}}` expressions can read object/array fields directly.
 - `{{#if expr}}...{{elseif expr}}...{{else}}...{{/if}}` renders the first matching block.
 - A property whose value is a function is invoked as `(vars, handle) => SerialValue | Promise<SerialValue>`, where `vars` are the caller-passed vars from `calc(path, vars)` (or `calcAll`/`peek`/`update`) and `handle` is the loaded handle. The return value is recursively calculated, so functions can return template strings, nested objects, or `-> expr` strings.
 
-`calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths and variables evaluate to `null`; bad expressions, unknown directives, and circular dependencies throw.
+### Impure layer: `<<...>>`
 
-`update(patch, vars?, opts?)` mutates the loaded state and returns `{ values, undo }`. `values` is the resolved path/value map that was written. `undo` is a serializable evaluator snapshot for `restore(undo)`, including prior values, created paths, PRNG state, variation counters, and a revision guard. Restore patches are LIFO: restore the newest successful update first, then earlier updates. Patch keys are dotted paths (key templates may interpolate `{{vars}}` and contain `*` wildcards). Add `+` to a path to merge/append/concat instead of replace: objects deep-merge, arrays append, and strings concatenate. Patch values are plain literals or template strings (`-> expr`, `{{...}}`); inside a template, `this` is the current calculated value at that path. All `this` snapshots are read before any writes. Missing paths are created by default; pass `opts.create: false` to throw instead. `clear()` resets state to the originally loaded values.
+Everything that mutates state — PRNG advancement, counter bumps, I/O — uses chevrons. Authors can grep `<<` to find every site that breaks reproducibility.
+
+- `<<name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result. The legacy `<<#name args>>` form still works. When the field value is a single directive with no surrounding text (e.g. `field: <<lookup id 7>>`), the raw return value is preserved — objects, arrays, numbers, etc. pass through unchanged. When embedded in a larger string, the result is stringified (objects/arrays via `JSON.stringify`).
+- `<<name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing. The binding holds the raw value, so subsequent `{{binding}}` or `{{binding.field}}` expressions can read object/array fields directly.
+- Built-in variation pickers (split parts on `|`): `<<rand A|B|C>>` (PRNG), `<<cycle A|B|C>>`, `<<seq A|B|C>>` (stops at last), `<<once A|B|C>>` (visits each once then `""`). Cycle/seq/once use a counter keyed on the directive body.
+- Built-in rand value generators: `<<random>>` (float 0–1), `<<randint min max>>`, `<<randfloat min max>>`, `<<randnormal min max>>`, `<<randintnormal min max>>`, `<<dice sides=6>>`, `<<coin prob=0.5>>`, `<<roll count sides=6>>`. Builtin names take precedence over `opts.io` entries.
+
+`calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context (no directive processing — directives only fire while rendering field values). Missing paths and variables evaluate to `null`; bad expressions, unknown directives, and circular dependencies throw.
+
+`update(patch, vars?, opts?)` mutates the loaded state and returns `{ values, undo }`. `values` is the resolved path/value map that was written. `undo` is a serializable snapshot for `restore(undo)`, recording prior values, created paths, and a revision guard. PRNG state and cycle counters are NOT tracked in undo — randomness is an explicit side effect (the `<<>>` is the signal) and not rolled back. Restore patches are LIFO: restore the newest successful update first, then earlier updates. Patch keys are dotted paths (key templates may interpolate `{{vars}}` and contain `*` wildcards). Add `+` to a path to merge/append/concat instead of replace: objects deep-merge, arrays append, and strings concatenate. Patch values are plain literals or template strings (`-> expr`, `{{...}}`, `<<...>>`); inside a template, `this` is the current calculated value at that path. All `this` snapshots are read before any writes. Missing paths are created by default; pass `opts.create: false` to throw instead. `clear()` resets state to the originally loaded values.
 
 ## One-shot helpers
 
-Use `evaluate(expr, opts?)` to run a single expression without loading YAML. Use `render(template, opts?)` for a single template string with full `{{...}}`, `<<...>>`, conditionals, and variations. Both accept the same options as `load` (`seed`, `cycle`, `params`, `fn`, `io`).
+Use `evaluate(expr, opts?)` to run a single expression without loading YAML. Use `render(template, opts?)` for a single template string with full `{{...}}`, `<<...>>`, and conditionals. Both accept the same options as `load` (`seed`, `cycle`, `params`, `fn`, `io`).
 
 ```ts
 import { evaluate, render } from "./yamlchemy";

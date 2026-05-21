@@ -1,13 +1,11 @@
 import { SerialValue } from "./CoreTypings";
 import { castToNumber, isTruthy, isValidKey, safeGet, TVars } from "./EvalCasting";
 import { parseNumberOrNull } from "./MathHelpers";
-import { PRNG } from "./RandHelpers";
 import { isBlank } from "./TextHelpers";
 import { LexerToken, tokenize } from "./TokenizerLexer";
 import { arrayFunctions } from "./functions/ArrayFunctions";
 import { dateFunctions } from "./functions/DateFunctions";
 import { mathFunctions } from "./functions/MathFunctions";
-import { createRandFunctions } from "./functions/RandFunctions";
 import { stringFunctions } from "./functions/StringFunctions";
 import { unifiedFunctions } from "./functions/UnifiedFunctions";
 
@@ -428,14 +426,10 @@ export type ExprError = {
 };
 
 export function createLoadedRunner(
-  rng: PRNG,
   outerVars: Record<string, SerialValue> = {},
   outerFuncs: Record<string, ExprEvalFunc> = {},
 ) {
-  const baseFunctions = buildEvalFunctions({
-    ...createRandFunctions(rng),
-    ...outerFuncs,
-  });
+  const baseFunctions = buildEvalFunctions(outerFuncs);
   function parse(expr: string) {
     return parseExprCore(expr);
   }

@@ -16,10 +16,10 @@ wow: "{{bar}}"
 hooray: "{{last(yay)}}"
 blah: -> 1 + 2
 longer: The distance is {{manhattan(123, 456, 789, 100)}}.
-choice: "{{cool|great|amazing}}"
-choiceRand: "{{~cool|great|amazing}}"
-choiceCycle: "{{&cool|great|amazing}}"
-choiceOnce: "{{!cool|great|amazing}}"
+choice: "<<seq cool|great|amazing>>"
+choiceRand: "<<rand cool|great|amazing>>"
+choiceCycle: "<<cycle cool|great|amazing>>"
+choiceOnce: "<<once cool|great|amazing>>"
 notExpr: "{{!truthy}}"
 notOrExpr: "{{!truthy || fallback}}"
 inline: Hi <<#echo name Ada; title Dr>>
@@ -214,9 +214,9 @@ emotions:
   assert.equal(mut.has("nested.brand"), false);
 
   const variations = load(`
-cyc: "{{&a|b|c}}"
-seq: "{{x|y|z}}"
-once: "{{!p|q|r}}"
+cyc: "<<cycle a|b|c>>"
+seq: "<<seq x|y|z>>"
+once: "<<once p|q|r>>"
 `);
   assert.equal(await variations.calc("cyc"), "a");
   assert.equal(await variations.calc("cyc"), "b");
@@ -232,8 +232,8 @@ once: "{{!p|q|r}}"
   assert.equal(await variations.calc("once"), "");
 
   const arrowTpl = load(`
-pick: -> '{{&grub|mott|skarn}}'
-gate: -> id == '{{&a|b|c}}'
+pick: -> '<<cycle grub|mott|skarn>>'
+gate: -> id == '<<cycle a|b|c>>'
 `);
   assert.equal(await arrowTpl.calc("pick"), "grub");
   assert.equal(await arrowTpl.calc("pick"), "mott");
@@ -272,13 +272,42 @@ gate: -> id == '{{&a|b|c}}'
   assert.equal(await argFns.calc("greet", { who: "Grace" }), "Hello Grace");
   assert.equal(await argFns.calc("fromHandle"), "Ada");
 
-  const rngHandle = load({ a: "-> getRandInt(1,1000)" }, { seed: "abc" });
+  const rng = load(
+    {
+      float: "<<random>>",
+      int: "<<randint 1 6>>",
+      fl: "<<randfloat 0 1>>",
+      die: "<<dice 20>>",
+      flip: "<<coin>>",
+      flipBiased: "<<coin 1>>",
+      rolls: "<<roll 3 6>>",
+      normal: "<<randnormal 0 100>>",
+      normalInt: "<<randintnormal 1 10>>",
+    },
+    { seed: "rand-suite" },
+  );
+  const rngFloat = await rng.calc("float");
+  assert.ok(typeof rngFloat === "number" && rngFloat >= 0 && rngFloat < 1);
+  const rngInt = await rng.calc("int");
+  assert.ok(typeof rngInt === "number" && Number.isInteger(rngInt) && rngInt >= 1 && rngInt <= 6);
+  const rngFl = await rng.calc("fl");
+  assert.ok(typeof rngFl === "number" && rngFl >= 0 && rngFl <= 1);
+  const rngDie = await rng.calc("die");
+  assert.ok(typeof rngDie === "number" && Number.isInteger(rngDie) && rngDie >= 1 && rngDie <= 20);
+  assert.equal(typeof (await rng.calc("flip")), "boolean");
+  assert.equal(await rng.calc("flipBiased"), true);
+  const rngRolls = await rng.calc("rolls");
+  assert.ok(Array.isArray(rngRolls) && rngRolls.length === 3 && rngRolls.every((n) => typeof n === "number"));
+  assert.equal(typeof (await rng.calc("normal")), "number");
+  assert.equal(typeof (await rng.calc("normalInt")), "number");
+
+  const rngHandle = load({ a: "<<randint 1 1000>>" }, { seed: "abc" });
   const before = rngHandle.rng.getState();
-  const first = await rngHandle.evaluate("getRandInt(1,1000)");
+  const first = await rngHandle.calc("a");
   const afterFirst = rngHandle.rng.getState();
   assert.ok(rngHandle.cycle() > 0, "cycle advances on rng use");
   rngHandle.rng.setState(before);
-  const replay = await rngHandle.evaluate("getRandInt(1,1000)");
+  const replay = await rngHandle.calc("a");
   assert.equal(first, replay, "setState restores rng for deterministic replay");
   assert.deepEqual(rngHandle.rng.getState(), afterFirst);
 
@@ -309,7 +338,7 @@ gate: -> id == '{{&a|b|c}}'
   const undoHandle = load(
     {
       score: 1,
-      pick: "{{&a|b|c}}",
+      pick: "<<cycle a|b|c>>",
       roll: 0,
     },
     { seed: "undo" },
@@ -318,8 +347,8 @@ gate: -> id == '{{&a|b|c}}'
   const rngBefore = undoHandle.rng.getState();
   const undoResult = await undoHandle.update({
     score: "-> score + 1",
-    "missing.deep": "{{&a|b|c}}",
-    roll: "-> getRandInt(1, 1000)",
+    "missing.deep": "<<cycle a|b|c>>",
+    roll: "<<randint 1 1000>>",
   });
   assert.equal(undoResult.values.score, 2);
   assert.equal(undoResult.values["missing.deep"], "b");
@@ -330,8 +359,8 @@ gate: -> id == '{{&a|b|c}}'
   undoHandle.restore(undoResult.undo);
   assert.equal(await undoHandle.calc("score"), 1);
   assert.equal(undoHandle.has("missing.deep"), false);
-  assert.deepEqual(undoHandle.rng.getState(), rngBefore);
-  assert.equal(await undoHandle.calc("pick"), "b");
+  assert.notDeepEqual(undoHandle.rng.getState(), rngBefore);
+  assert.equal(await undoHandle.calc("pick"), "c");
 
   const parentHandle = load({ parent: 1 });
   const parentUndo = await parentHandle.update({ "parent.child": 2 });

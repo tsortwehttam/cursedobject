@@ -17,9 +17,11 @@ blah: -> 1 + 2
 # Custom sync functions from load({ fn }) can be called from expressions.
 longer: The distance is {{manhattan(123, 456, 789, 100)}}.
 
-# Dynamic content variation picks one option with the seeded PRNG.
-# Bare |, ^, and ~ separators work when all parts look like plain text.
-choice: "{{cool|great|amazing}}"
+# <<>> directives are the impurity boundary: randomness and variation live here.
+# <<rand A|B|C>> random pick. <<cycle A|B|C>>, <<seq A|B|C>>, <<once A|B|C>> use a counter.
+# Other rand directives: <<random>>, <<randint min max>>, <<dice sides>>, <<coin prob>>, etc.
+choice: "<<rand cool|great|amazing>>"
+roll: <<dice 20>>
 
 # <<name args>> calls an async io function and inserts its result.
 inline: Hi <<echo name Ada; title Dr>>

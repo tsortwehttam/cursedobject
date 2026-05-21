@@ -1,10 +1,10 @@
 import { load as parseYaml } from "js-yaml";
+import { BUILTIN_DIRECTIVES } from "./lib/Builtins";
 import { SerialObject, SerialValue } from "./lib/CoreTypings";
 import { castToString, isTruthy, isValidKey, safeGet } from "./lib/EvalCasting";
 import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
-import { createPRNG, PRNG, PRNGState } from "./lib/RandHelpers";
+import { createPRNG, PRNG } from "./lib/RandHelpers";
 import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
-import { createRandFunctions } from "./lib/functions/RandFunctions";
 import { readTemplateToken } from "./lib/TemplateHelpers";
 
 export type LazyValue = (vars: SerialObject, handle: YamlchemyHandle) => SerialValue | Promise<SerialValue>;
@@ -34,8 +34,6 @@ export type UndoPatch = {
   to: number;
   paths: Record<string, SerialValue>;
   unset: string[];
-  rng: PRNGState;
-  cycles: Record<string, number>;
 };
 
 export type YamlchemyIoFunc = (params: MarshalledParams, handle: YamlchemyHandle) => Promise<SerialValue> | SerialValue;
@@ -86,17 +84,7 @@ const DEFAULT_OPTIONS: LoadOptions = {
   io: {},
 };
 
-const VARIATION_MARKERS = new Set(["~", "&", "!"]);
 const UNDO_PATCH_VERSION = 1;
-
-type VariationKind = "sequence" | "cycle" | "random" | "once";
-
-function variationKind(marker: string): VariationKind {
-  if (marker === "&") return "cycle";
-  if (marker === "~") return "random";
-  if (marker === "!") return "once";
-  return "sequence";
-}
 
 export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
@@ -107,11 +95,17 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   const view: MixedObject = cloneMixed(root) as MixedObject;
   const active = new Set<string>();
   const funcs = createBaseFunctionMap(options.fn);
-  const runner = createLoadedRunner(rng, {}, funcs);
-  const baseFuncs = buildEvalFunctions({ ...createRandFunctions(rng), ...funcs });
+  const runner = createLoadedRunner({}, funcs);
+  const baseFuncs = buildEvalFunctions(funcs);
   const astCache = new Map<string, Expr | null>();
   const cycleCounters = new Map<string, number>();
   let rev = 0;
+
+  function bumpCounter(key: string): number {
+    const idx = cycleCounters.get(key) ?? 0;
+    cycleCounters.set(key, idx + 1);
+    return idx;
+  }
 
   function parseCached(expr: string): Expr | null {
     if (astCache.has(expr)) {
@@ -204,8 +198,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     const create = opts.create ?? true;
     const entries = flattenPatch(patch);
     const from = rev;
-    const rngState = rng.getState();
-    const cycles = serializeCycles(cycleCounters);
     type Pending = {
       path: string;
       rhs: SerialValue;
@@ -272,8 +264,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
         to: rev,
         paths,
         unset: [...unset],
-        rng: rngState,
-        cycles,
       },
     };
   }
@@ -287,9 +277,11 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     }
     const expr = readArrowExpr(rhs);
     if (expr !== null) {
-      const rendered = expr.indexOf("{{") >= 0 ? await renderTemplates(expr, vars) : expr;
+      const rendered = needsRender(expr) ? await renderText(expr, vars) : expr;
       return evaluateExpr(rendered, vars);
     }
+    const lone = await tryLoneDirective(rhs, vars);
+    if (lone.hit) return lone.value;
     return renderText(rhs, vars);
   }
 
@@ -317,8 +309,6 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       setViewPath(state, path, val);
       setViewPath(view, path, cloneSerial(val));
     }
-    rng.setState(undo.rng);
-    restoreCycles(cycleCounters, undo.cycles);
     rev = undo.from;
   }
 
@@ -342,7 +332,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
       }
       const expr = readArrowExpr(value);
       if (expr !== null) {
-        const rendered = expr.indexOf("{{") >= 0 ? await renderTemplates(expr, vars) : expr;
+        const rendered = needsRender(expr) ? await renderText(expr, vars) : expr;
         return evaluateExpr(rendered, vars);
       }
       const lone = await tryLoneDirective(value, vars);
@@ -412,22 +402,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
   }
 
   async function renderTemplateBody(body: string, vars: LocalVars): Promise<SerialValue> {
-    const variation = splitVariation(body);
-    if (variation.parts.length > 0) {
-      const choice = pickVariation(body, variation.parts, variation.kind);
-      if (choice === null) return "";
-      return renderTemplates(choice, vars);
-    }
     return evaluateExpr(await renderTemplates(body, vars), vars);
-  }
-
-  function pickVariation(key: string, parts: string[], kind: VariationKind): string | null {
-    if (kind === "random") return rng.randomElement(parts);
-    const idx = cycleCounters.get(key) ?? 0;
-    cycleCounters.set(key, idx + 1);
-    if (kind === "cycle") return parts[idx % parts.length] ?? null;
-    if (kind === "once") return idx < parts.length ? parts[idx] ?? null : null;
-    return parts[Math.min(idx, parts.length - 1)] ?? null;
   }
 
   async function executeDirective(text: string, start: number, vars: LocalVars): Promise<{ value: SerialValue; binding: string; end: number }> {
@@ -442,6 +417,11 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
     const name = match[1];
     const binding = match[2] ?? "";
     const args = await renderTemplates(match[3] ?? "", vars);
+    const builtin = BUILTIN_DIRECTIVES[name];
+    if (builtin) {
+      const value = await builtin(args, { rng, counter: bumpCounter, key: token.body.trim() });
+      return { value, binding, end: token.end };
+    }
     const fn = options.io[name];
     if (!fn) {
       throw new Error(`Unknown io directive: ${name}`);
@@ -740,68 +720,8 @@ function readIfTemplateBlock(text: string, start: number): { branches: IfBranch[
   throw new Error(`Missing {{/if}} for if block at ${start}`);
 }
 
-function splitVariation(body: string): { parts: string[]; kind: VariationKind } {
-  const marker = body[0] ?? "";
-  const hasMarker = VARIATION_MARKERS.has(marker);
-  const inner = hasMarker ? body.slice(1).trimStart() : body;
-  const parts = splitTopLevel(inner, "|");
-  if (parts.length > 1 && parts.every(looksLikeVariationPart)) {
-    return { parts, kind: hasMarker ? variationKind(marker) : "sequence" };
-  }
-  return { parts: [], kind: "sequence" };
-}
-
-function splitTopLevel(text: string, delim: string): string[] {
-  const out: string[] = [];
-  let start = 0;
-  let depth = 0;
-  let quote = "";
-  let escape = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i] ?? "";
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (ch === "\\") {
-      escape = true;
-      continue;
-    }
-    if (quote) {
-      if (ch === quote) {
-        quote = "";
-      }
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      quote = ch;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth += 1;
-      continue;
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth -= 1;
-      continue;
-    }
-    if (depth === 0 && ch === delim) {
-      out.push(text.slice(start, i).trim());
-      start = i + 1;
-    }
-  }
-  out.push(text.slice(start).trim());
-  return out;
-}
-
-function looksLikeVariationPart(part: string): boolean {
-  if (!part) {
-    return false;
-  }
-  if (part.includes("{{") || part.includes("}}")) {
-    return true;
-  }
-  return !/[()+*/<>=?:,;[\]{}]/.test(part);
+function needsRender(text: string): boolean {
+  return text.indexOf("{{") >= 0 || findDirectiveStart(text, 0) >= 0;
 }
 
 function resetObject(target: MixedObject, fresh: MixedObject): void {
@@ -810,21 +730,6 @@ function resetObject(target: MixedObject, fresh: MixedObject): void {
   }
   for (const key of Object.keys(fresh)) {
     target[key] = fresh[key]!;
-  }
-}
-
-function serializeCycles(cycles: Map<string, number>): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [key, val] of cycles) {
-    out[key] = val;
-  }
-  return out;
-}
-
-function restoreCycles(target: Map<string, number>, cycles: Record<string, number>): void {
-  target.clear();
-  for (const key of Object.keys(cycles)) {
-    target.set(key, cycles[key]!);
   }
 }
 
