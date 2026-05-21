@@ -263,6 +263,15 @@ gate: -> id == '{{&a|b|c}}'
   assert.equal(await fns.calc("tpl"), 3);
   assert.deepEqual(await fns.calc("nested"), { fn: "deep" });
 
+  const argFns = load({
+    name: "Ada",
+    greet: (vars) => `Hello ${vars.who ?? "world"}`,
+    fromHandle: async (_vars, handle) => handle.calc("name"),
+  });
+  assert.equal(await argFns.calc("greet"), "Hello world");
+  assert.equal(await argFns.calc("greet", { who: "Grace" }), "Hello Grace");
+  assert.equal(await argFns.calc("fromHandle"), "Ada");
+
   const rngHandle = load({ a: "-> getRandInt(1,1000)" }, { seed: "abc" });
   const before = rngHandle.rng.getState();
   const first = await rngHandle.evaluate("getRandInt(1,1000)");

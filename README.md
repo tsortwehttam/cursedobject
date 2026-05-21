@@ -71,6 +71,7 @@ yam.clear();
 - `<<name args>>` calls `opts.io.name(params, handle)` (sync or async) and inserts the result. The legacy `<<#name args>>` form still works. When the field value is a single directive with no surrounding text (e.g. `field: <<lookup id 7>>`), the raw return value is preserved — objects, arrays, numbers, etc. pass through unchanged. When embedded in a larger string, the result is stringified (objects/arrays via `JSON.stringify`).
 - `<<name:binding args>>` stores result in a local binding for the rest of the current string and inserts nothing. The binding holds the raw value, so subsequent `{{binding}}` or `{{binding.field}}` expressions can read object/array fields directly.
 - `{{#if expr}}...{{elseif expr}}...{{else}}...{{/if}}` renders the first matching block.
+- A property whose value is a function is invoked as `(vars, handle) => SerialValue | Promise<SerialValue>`, where `vars` are the caller-passed vars from `calc(path, vars)` (or `calcAll`/`peek`/`update`) and `handle` is the loaded handle. The return value is recursively calculated, so functions can return template strings, nested objects, or `-> expr` strings.
 
 `calc(path)`, `calcAll()`, and `evaluate(expr)` are async. Each accepts an optional vars object that overlays the loaded params for that call. Use `fork(opts)` to create a new handle with merged options. `evaluate(expr)` runs the expression language directly against the calculated YAML context. Missing paths and variables evaluate to `null`; bad expressions, unknown directives, and circular dependencies throw.
 

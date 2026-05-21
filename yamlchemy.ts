@@ -1,11 +1,15 @@
 import { load as parseYaml } from "js-yaml";
-import { LazyValue, MixedObject, MixedValue, SerialObject, SerialValue } from "./lib/CoreTypings";
+import { SerialObject, SerialValue } from "./lib/CoreTypings";
 import { castToString, isTruthy, isValidKey, safeGet } from "./lib/EvalCasting";
 import { marshallParams, MarshalledParams } from "./lib/ParamsMarshaller";
 import { createPRNG, PRNG, PRNGState } from "./lib/RandHelpers";
 import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
 import { createRandFunctions } from "./lib/functions/RandFunctions";
 import { readTemplateToken } from "./lib/TemplateHelpers";
+
+export type LazyValue = (vars: SerialObject, handle: YamlchemyHandle) => SerialValue | Promise<SerialValue>;
+export type MixedValue = SerialValue | LazyValue | MixedValue[] | MixedObject;
+export type MixedObject = { [key: string]: MixedValue };
 
 export type YamlchemySource = string | MixedObject;
 
@@ -330,7 +334,7 @@ export function load(source: YamlchemySource, opts: Partial<LoadOptions> = {}): 
 
   async function calcValue(value: MixedValue, path: string, vars: LocalVars): Promise<SerialValue> {
     if (typeof value === "function") {
-      return calcValue(await value(), path, vars);
+      return calcValue(await value(vars, handle), path, vars);
     }
     if (typeof value === "string") {
       if (isPlainString(value)) {
