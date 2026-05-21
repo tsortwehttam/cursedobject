@@ -1,14 +1,12 @@
-# Yamlchemy 🍠
+# CursedObject
 
-<img src="./mascot.png" alt="Yamlchemy mascot" width="160" />
-
-Yamlchemy calculates values on a plain JS object with deterministic templates, expressions, local async bindings, and inline conditionals. It does not parse YAML — bring your own parser (`js-yaml`, `json5`, hand-built objects, whatever).
+CursedObject calculates values on a plain JS object with deterministic templates, expressions, local async bindings, and inline conditionals. It does not parse YAML — bring your own parser (`js-yaml`, `json5`, hand-built objects, whatever).
 
 ```ts
 import { load as parseYaml } from "js-yaml";
-import { load } from "./yamlchemy";
+import { load } from "./cursedobject";
 
-const yam = load(
+const obj = load(
   parseYaml(`
 name: Ada
 greeting: Hello {{name}}
@@ -41,24 +39,24 @@ line: |
   },
 );
 
-await yam.calc("greeting"); // "Hello Ada"
-await yam.calc("score"); // 3
-await yam.calc("allNames"); // ["Ada", "Grace"]
-await yam.evaluate("get('names.0')"); // "Ada"
-await yam.calc("greeting", { name: "Grace" }); // "Hello Grace"
-yam.has("names.0"); // true
-yam.raw("greeting"); // "Hello {{name}}"
-await yam.calcAll();
+await obj.calc("greeting"); // "Hello Ada"
+await obj.calc("score"); // 3
+await obj.calc("allNames"); // ["Ada", "Grace"]
+await obj.evaluate("get('names.0')"); // "Ada"
+await obj.calc("greeting", { name: "Grace" }); // "Hello Grace"
+obj.has("names.0"); // true
+obj.raw("greeting"); // "Hello {{name}}"
+await obj.calcAll();
 
-const { values, undo } = await yam.update(
+const { values, undo } = await obj.update(
   {
     "relations.{{other}}.emotions.arousal": "-> incr(this)",
     emotions: { arousal: "-> incr(this) + 2.5" },
   },
   { other: "sarah" },
 );
-yam.restore(undo);
-yam.clear();
+obj.restore(undo);
+obj.clear();
 ```
 
 ## Syntax
@@ -91,7 +89,7 @@ Everything that mutates state — PRNG advancement, counter bumps, I/O — uses 
 Use `evaluate(expr, opts?)` to run a single expression without a source object. Use `render(template, opts?)` for a single template string with full `{{...}}`, `<<...>>`, and conditionals. Both accept the same options as `load` (`seed`, `cycle`, `params`, `fn`, `io`).
 
 ```ts
-import { evaluate, render } from "./yamlchemy";
+import { evaluate, render } from "./cursedobject";
 
 await evaluate("x + y", { params: { x: 5, y: 10 } }); // 15
 await evaluate("shout(name)", {

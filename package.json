@@ -1,15 +1,14 @@
 {
-  "name": "yamlchemy",
+  "name": "cursedobject",
   "version": "1.0.0",
-  "description": "🍠 Object template engine: expressions, async directives, and calculated field selection. Bring your own YAML/JSON parser.",
-  "main": "yamlchemy.ts",
-  "types": "yamlchemy.ts",
+  "description": "Object template engine: expressions, async directives, and calculated field selection. Bring your own YAML/JSON parser.",
+  "main": "cursedobject.ts",
+  "types": "cursedobject.ts",
   "files": [
-    "yamlchemy.ts",
+    "cursedobject.ts",
     "lib",
     "README.md",
-    "LICENSE",
-    "mascot.png"
+    "LICENSE"
   ],
   "author": "Matthew Trost",
   "license": "Apache-2.0",

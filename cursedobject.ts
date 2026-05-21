@@ -6,7 +6,7 @@ import { createPRNG, PRNG } from "./lib/RandHelpers";
 import { buildEvalFunctions, createLoadedRunner, evaluateExprCore, Expr, ExprEvalFunc, walkExpr } from "./lib/ScriptEvaluator";
 import { readTemplateToken } from "./lib/TemplateHelpers";
 
-export type LazyValue = (vars: SerialObject, handle: YamlchemyHandle) => SerialValue | Promise<SerialValue>;
+export type LazyValue = (vars: SerialObject, handle: CursedObjectHandle) => SerialValue | Promise<SerialValue>;
 export type MixedValue = SerialValue | LazyValue | MixedValue[] | MixedObject;
 export type MixedObject = { [key: string]: MixedValue };
 
@@ -15,7 +15,7 @@ export type LoadOptions = {
   cycle: number;
   params: Record<string, SerialValue>;
   fn: Record<string, ExprEvalFunc>;
-  io: Record<string, YamlchemyIoFunc>;
+  io: Record<string, CursedObjectIoFunc>;
 };
 
 type LocalVars = Record<string, SerialValue>;
@@ -33,9 +33,9 @@ export type UndoPatch = {
   unset: string[];
 };
 
-export type YamlchemyIoFunc = (params: MarshalledParams, handle: YamlchemyHandle) => Promise<SerialValue> | SerialValue;
+export type CursedObjectIoFunc = (params: MarshalledParams, handle: CursedObjectHandle) => Promise<SerialValue> | SerialValue;
 
-export type YamlchemyHandle = {
+export type CursedObjectHandle = {
   has(path: string): boolean;
   calc: {
     (path: string): Promise<SerialValue>;
@@ -66,8 +66,8 @@ export type YamlchemyHandle = {
   restore(undo: UndoPatch): void;
   clear(): void;
   fork: {
-    (): YamlchemyHandle;
-    (opts: Partial<LoadOptions>): YamlchemyHandle;
+    (): CursedObjectHandle;
+    (opts: Partial<LoadOptions>): CursedObjectHandle;
   };
   rng: PRNG;
   cycle(): number;
@@ -83,7 +83,7 @@ const DEFAULT_OPTIONS: LoadOptions = {
 
 const UNDO_PATCH_VERSION = 1;
 
-export function load(source: MixedObject, opts: Partial<LoadOptions> = {}): YamlchemyHandle {
+export function load(source: MixedObject, opts: Partial<LoadOptions> = {}): CursedObjectHandle {
   const options: LoadOptions = { ...DEFAULT_OPTIONS, ...opts };
   const root = toMixedObject(source, "$");
   const rng = createPRNG(options.seed, options.cycle);
@@ -119,7 +119,7 @@ export function load(source: MixedObject, opts: Partial<LoadOptions> = {}): Yaml
     return out;
   }
 
-  const handle: YamlchemyHandle = {
+  const handle: CursedObjectHandle = {
     has,
     calc,
     calcAll,
@@ -308,7 +308,7 @@ export function load(source: MixedObject, opts: Partial<LoadOptions> = {}): Yaml
     rev = undo.from;
   }
 
-  function fork(next: Partial<LoadOptions> = {}): YamlchemyHandle {
+  function fork(next: Partial<LoadOptions> = {}): CursedObjectHandle {
     return load(source, {
       ...options,
       ...next,
@@ -583,7 +583,7 @@ function readLiteralPath(node: Expr): string | null {
 function toMixedObject(value: unknown, path: string): MixedObject {
   const mixed = toMixedValue(value, path);
   if (mixed === null || typeof mixed !== "object" || Array.isArray(mixed)) {
-    throw new Error("Yamlchemy root must be an object");
+    throw new Error("CursedObject root must be an object");
   }
   return mixed;
 }

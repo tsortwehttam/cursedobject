@@ -1,7 +1,7 @@
 import { load as parseYaml } from "js-yaml";
 import assert from "node:assert/strict";
 import { SerialValue } from "../lib/CoreTypings";
-import { load, MixedObject, setValueAtPath } from "../yamlchemy";
+import { load, MixedObject, setValueAtPath } from "../cursedobject";
 
 const yaml = (text: string): MixedObject => parseYaml(text) as MixedObject;
 
